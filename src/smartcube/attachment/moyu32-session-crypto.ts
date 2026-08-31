@@ -20,9 +20,10 @@ export function createMoyu32SessionCrypto(mac: string): Moyu32SessionCrypto {
         key[i] = (key[i]! + t[5 - i]!) % 255;
         iv[i] = (iv[i]! + t[5 - i]!) % 255;
     }
+    // ECB keeps no chained state, so one cipher instance serves the whole session.
+    const cipher = new ModeOfOperation.ecb(new Uint8Array(key));
     return {
         decrypt(raw: number[]): number[] {
-            const cipher = new ModeOfOperation.ecb(new Uint8Array(key));
             const ret = raw.slice();
             if (ret.length > 16) {
                 const offset = ret.length - 16;
@@ -39,7 +40,6 @@ export function createMoyu32SessionCrypto(mac: string): Moyu32SessionCrypto {
         },
         encrypt(data: number[]): number[] {
             const ret = data.slice();
-            const cipher = new ModeOfOperation.ecb(new Uint8Array(key));
             for (let i = 0; i < 16; i++) {
                 ret[i]! ^= iv[i]!;
             }
