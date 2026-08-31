@@ -14,8 +14,9 @@
   "scripts": {
     "clean": "rm -rf dist/",
     "compile:bundles": "rollup -c",
+    "check:dist": "node scripts/check-dist.mjs",
     "compile:types": "tsc -p tsconfig.types.json",
-    "build": "npm run clean && npm run compile:types && npm run compile:bundles",
+    "build": "npm run clean && npm run compile:types && npm run compile:bundles && npm run check:dist",
     "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest"

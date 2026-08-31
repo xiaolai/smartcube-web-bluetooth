@@ -1,4 +1,5 @@
-import { AES } from 'aes-js';
+import aesjs from 'aes-js';
+import type { AES } from 'aes-js';
 import { Subject } from 'rxjs';
 import * as def from './gan-cube-definitions';
 import type { GanCubeCommand, GanCubeConnection, GanCubeEvent } from './gan-cube-protocol';
@@ -10,7 +11,7 @@ class GanGen1Aes {
     private readonly aes: AesBlockCipher;
 
     constructor(keyBytes: Uint8Array) {
-        this.aes = new AES([...keyBytes]) as AesBlockCipher;
+        this.aes = new aesjs.AES([...keyBytes]) as AesBlockCipher;
     }
 
     decrypt(data: Uint8Array): Uint8Array {

@@ -1,6 +1,6 @@
 
 import { Subject } from 'rxjs';
-import { ModeOfOperation } from 'aes-js';
+import aesjs from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
@@ -20,6 +20,8 @@ const CHRT_UUID_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
 const ENABLE_GYRO_PAYLOAD = Object.freeze([
     172, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]) as readonly number[];
+
+const { ModeOfOperation } = aesjs;
 
 const BASE_KEY = [21, 119, 58, 92, 103, 14, 45, 31, 23, 103, 42, 19, 155, 103, 82, 87];
 const BASE_IV = [17, 35, 38, 37, 134, 42, 44, 59, 85, 6, 127, 49, 126, 103, 33, 87];
