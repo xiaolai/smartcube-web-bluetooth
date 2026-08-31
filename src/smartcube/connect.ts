@@ -12,6 +12,7 @@ import type { ConnectSmartCubeOptions, DeviceSelectionMode } from './attachment/
 import type { MacAddressProvider, SmartCubeConnection, SmartCubeEvent } from './types';
 import { CubieCube } from './cubie-cube';
 import { getRegisteredProtocols, type SmartCubeProtocol } from './protocol';
+import { resolveBluetooth } from '../bluetooth-source';
 
 /**
  * MoYu-style payloads always yield 54-char FACELETS from {U,F,R,B,L,D} even when AES decrypt is wrong;
@@ -198,7 +199,7 @@ export async function connectSmartCube(
     });
     status('Select your cube…');
 
-    const device = await navigator.bluetooth.requestDevice(requestOptions);
+    const device = await resolveBluetooth(opts.bluetooth).requestDevice(requestOptions);
 
     let conn: SmartCubeConnection;
     try {

@@ -12,6 +12,7 @@ import {
     GanCubeMove,
 } from './gan-cube-protocol';
 import { createGanClassicConnection, hasGanGen1Profile } from './gan-driver-select';
+import { resolveBluetooth, type BluetoothSourceOptions } from './bluetooth-source';
 
 /**
  * Initiate new connection with the GAN Smart Cube device.
@@ -20,9 +21,13 @@ import { createGanClassicConnection, hasGanGen1Profile } from './gan-driver-sele
  * against decrypted traffic before returning — that behaviour is part of its
  * long-standing contract.
  * @param customMacAddressProvider Optional custom provider for cube MAC address
+ * @param options Optional source for the Web Bluetooth entry point (defaults to navigator.bluetooth)
  * @returns Object representing connection API and state
  */
-async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Promise<GanCubeConnection> {
+async function connectGanCube(
+    customMacAddressProvider?: MacAddressProvider,
+    options?: BluetoothSourceOptions
+): Promise<GanCubeConnection> {
 
     // Request user for the bluetooth device (popup selection dialog)
     const nameFilters: BluetoothLEScanFilter[] = [
@@ -42,7 +47,7 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
             def.GAN_GEN4_SERVICE,
         ]),
     ];
-    const device: BluetoothDeviceWithMAC = await navigator.bluetooth.requestDevice(
+    const device: BluetoothDeviceWithMAC = await resolveBluetooth(options?.bluetooth).requestDevice(
         {
             filters: [...nameFilters, ...cicFilters],
             optionalServices,

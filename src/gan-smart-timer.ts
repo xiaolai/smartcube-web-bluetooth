@@ -1,5 +1,6 @@
 
 import { Observable, Subject } from 'rxjs';
+import { resolveBluetooth, type BluetoothSourceOptions } from './bluetooth-source';
 
 // GAN Smart Timer bluetooth service and characteristic UUIDs
 const BLE_UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
@@ -171,12 +172,13 @@ function buildTimerEvent(data: DataView): GanTimerEvent {
 
 /**
  * Initiate new connection with the GAN Smart Timer device
+ * @param options Optional source for the Web Bluetooth entry point (defaults to navigator.bluetooth)
  * @returns Connection connection object representing connection API and state
  */
-async function connectGanTimer(): Promise<GanTimerConnection> {
+async function connectGanTimer(options?: BluetoothSourceOptions): Promise<GanTimerConnection> {
 
     // Request user for the bluetooth device (popup selection dialog)
-    const device = await navigator.bluetooth.requestDevice(
+    const device = await resolveBluetooth(options?.bluetooth).requestDevice(
         {
             filters: [
                 { namePrefix: "GAN" },
