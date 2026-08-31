@@ -5,6 +5,7 @@ import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
+import { abortError, throwIfAborted } from '../attachment/abort';
 import { CubieCube, SOLVED_FACELET } from '../cubie-cube';
 import { now } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
@@ -103,6 +104,7 @@ class GoCubeConnection implements SmartCubeConnection {
     /** First full-state (type 2) after connect resolves the init wait; the bus snapshot preserves it for late subscribers. */
     private awaitingInitialState = false;
     private resolveInitialState: (() => void) | undefined;
+    private rejectInitialState: ((e: Error) => void) | undefined;
 
     constructor(device: BluetoothDevice, name: string, gyroSupported: boolean) {
         this.device = device;
@@ -177,6 +179,12 @@ class GoCubeConnection implements SmartCubeConnection {
         writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_BATTERY]).buffer).catch(() => {});
     };
 
+    private requestStateResync(): void {
+        if (this.writeChrct) {
+            writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_STATE]).buffer).catch(() => {});
+        }
+    }
+
     private parseData(value: DataView): void {
         const timestamp = now();
         if (value.byteLength < 4) return;
@@ -186,12 +194,21 @@ class GoCubeConnection implements SmartCubeConnection {
             return;
         }
         // Full frames include a checksum byte before CRLF; short type-1 move frames may be smaller.
-        if (value.byteLength >= 7 && !gocubeChecksumValid(value)) {
-            return;
+        if (value.byteLength >= 7) {
+            // Byte 1 declares byteLength - 2 on every real frame (verified against captures).
+            if (value.getUint8(1) !== value.byteLength - 2) {
+                return;
+            }
+            if (!gocubeChecksumValid(value)) {
+                return;
+            }
         }
 
         const msgType = value.getUint8(2);
         const msgLen = value.byteLength - 6;
+        if (msgType !== 1 && value.byteLength < 7) {
+            return; // only truncated move frames may arrive below checksummable size
+        }
 
         if (msgType === 3) {
             // MsgOrientation: ASCII x#y#z#w between byte 3 and checksum.
@@ -225,13 +242,25 @@ class GoCubeConnection implements SmartCubeConnection {
                 }
                 return;
             }
+            if (msgLen <= 0 || msgLen % 2 !== 0) {
+                return; // moves come in 2-byte pairs; an odd tail byte is not a move
+            }
             for (let i = 0; i < msgLen; i += 2) {
-                const axis = AXIS_PERM[value.getUint8(3 + i) >> 1];
-                const dirBit = value.getUint8(3 + i) & 1;
+                const moveCode = value.getUint8(3 + i);
+                if (moveCode >> 1 > 5) {
+                    // Not a legal face code: the frame is corrupt, resynchronize instead of guessing.
+                    this.requestStateResync();
+                    return;
+                }
+                const axis = AXIS_PERM[moveCode >> 1];
+                const dirBit = moveCode & 1;
                 this.lastMoveMeta = { axis, dirBit };
                 this.applySingleMove(timestamp, axis, dirBit);
             }
         } else if (msgType === 2) { // Cube state
+            if (value.byteLength < 60) {
+                return; // 54 sticker bytes + angles required; a short frame would read out of bounds
+            }
             // Full-cube state is six 9-sticker faces in wire order; unpack with AXIS_PERM/FACE_PERM.
             const facelet: string[] = [];
             for (let a = 0; a < 6; a++) {
@@ -245,7 +274,9 @@ class GoCubeConnection implements SmartCubeConnection {
             const newFacelet = facelet.join('');
             const curFacelet = this.prevCubie.toFaceCube();
             if (newFacelet !== curFacelet) {
-                this.curCubie.fromFacelet(newFacelet);
+                if (this.curCubie.fromFacelet(newFacelet) === -1) {
+                    return; // not a legal cube state: keep the tracked state authoritative
+                }
                 const tmp = this.curCubie;
                 this.curCubie = this.prevCubie;
                 this.prevCubie = tmp;
@@ -276,15 +307,30 @@ class GoCubeConnection implements SmartCubeConnection {
         });
     }
 
-    private onDisconnect = (): void => {
+    /** Idempotent teardown shared by remote and explicit disconnects. */
+    private teardown(): void {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+        if (this.readChrct) {
+            this.readChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
+            this.readChrct = null;
+        }
+        this.writeChrct = null;
         this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
         }
+        const rejectInit = this.rejectInitialState;
+        this.rejectInitialState = undefined;
+        this.resolveInitialState = undefined;
+        this.awaitingInitialState = false;
+        rejectInit?.(new Error('GoCube disconnected during initialization'));
         this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
         this.bus.complete();
+    }
+
+    private onDisconnect = (): void => {
+        this.teardown();
     };
 
     async init(): Promise<void> {
@@ -300,8 +346,9 @@ class GoCubeConnection implements SmartCubeConnection {
             await writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_ENABLE_ORIENTATION]).buffer).catch(() => {});
         }
 
-        const firstStatePromise = new Promise<void>((resolve) => {
+        const firstStatePromise = new Promise<void>((resolve, reject) => {
             this.resolveInitialState = resolve;
+            this.rejectInitialState = reject;
         });
         this.awaitingInitialState = true;
 
@@ -310,16 +357,30 @@ class GoCubeConnection implements SmartCubeConnection {
         this.batteryInterval = setInterval(this.pollBattery, 60_000);
 
         let initialStateTimer: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([
-            firstStatePromise,
-            new Promise<void>((resolve) => {
-                initialStateTimer = setTimeout(resolve, INITIAL_STATE_TIMEOUT_MS);
-            })
-        ]);
-        clearTimeout(initialStateTimer);
-        this.awaitingInitialState = false;
-        this.resolveInitialState = undefined;
+        let timedOut = false;
+        try {
+            // A disconnect during the wait rejects firstStatePromise and fails init.
+            await Promise.race([
+                firstStatePromise,
+                new Promise<void>((resolve) => {
+                    initialStateTimer = setTimeout(() => {
+                        timedOut = true;
+                        resolve();
+                    }, INITIAL_STATE_TIMEOUT_MS);
+                })
+            ]);
+        } finally {
+            clearTimeout(initialStateTimer);
+            this.awaitingInitialState = false;
+            this.resolveInitialState = undefined;
+            this.rejectInitialState = undefined;
+        }
 
+        if (timedOut) {
+            // The cube never reported its state: leave the snapshot's facelets unknown
+            // instead of presenting the default solved state as if the cube had said so.
+            return;
+        }
         // Emit the initial state synchronously: live subscribers cannot exist yet, but the
         // bus snapshot preserves it for state$/getSnapshot().
         this.bus.emit({
@@ -337,6 +398,8 @@ class GoCubeConnection implements SmartCubeConnection {
             this.bus.forceNextBattery();
             await writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_BATTERY]).buffer);
         } else if (command.type === "REQUEST_FACELETS") {
+            // Tracker-based cube: report the tracked state immediately (the documented
+            // semantics for GoCube), then poll the device so a later type-2 frame corrects it.
             const ts = now();
             this.bus.emit({
                 timestamp: ts,
@@ -362,20 +425,11 @@ class GoCubeConnection implements SmartCubeConnection {
     }
 
     async disconnect(): Promise<void> {
-        if (this.readChrct) {
-            this.readChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
-            await this.readChrct.stopNotifications().catch(() => {});
-            this.readChrct = null;
+        const readChrct = this.readChrct;
+        this.teardown();
+        if (readChrct) {
+            await readChrct.stopNotifications().catch(() => {});
         }
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
-        }
-        this.writeChrct = null;
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }
@@ -400,12 +454,22 @@ const goCubeProtocol: SmartCubeProtocol = {
     async connect(
         device: BluetoothDevice,
         _macProvider?: MacAddressProvider,
-        _context?: AttachmentContext
+        context?: AttachmentContext
     ): Promise<SmartCubeConnection> {
+        throwIfAborted(context?.signal);
         const raw = device.name ?? '';
         const name = raw.startsWith('GoCube') ? 'GoCube' : 'Rubiks Connected';
         const conn = new GoCubeConnection(device, name, goCubeDeviceSupportsGyro(raw));
-        await conn.init();
+        try {
+            await conn.init();
+        } catch (e) {
+            await conn.disconnect().catch(() => {});
+            throw e;
+        }
+        if (context?.signal?.aborted) {
+            await conn.disconnect().catch(() => {});
+            throw abortError();
+        }
         return conn;
     }
 };
