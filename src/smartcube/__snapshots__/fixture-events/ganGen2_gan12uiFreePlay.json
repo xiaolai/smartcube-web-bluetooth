@@ -1,0 +1,545 @@
+{
+  "fixture": "fixture_GAN12uiFp-753_gan-gen2_2026-04-14T11-34-36.json",
+  "protocol": "gan-gen2",
+  "deviceName": "GAN12uiFp-753",
+  "capabilitiesAtConnect": {
+    "gyroscope": true,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": true
+  },
+  "capabilitiesAfterDrain": {
+    "gyroscope": true,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": true
+  },
+  "counts": {
+    "GYRO": 242,
+    "FACELETS": 2,
+    "MOVE": 30,
+    "BATTERY": 1,
+    "HARDWARE": 1,
+    "DISCONNECT": 1
+  },
+  "gyro": {
+    "count": 242,
+    "checksum": "2207f143",
+    "first": [
+      {
+        "x": -0.412122,
+        "y": -0.162908,
+        "z": -0.13126,
+        "w": 0.886746
+      },
+      {
+        "x": -0.367687,
+        "y": -0.160344,
+        "z": -0.081576,
+        "w": 0.912351
+      },
+      {
+        "x": -0.320078,
+        "y": -0.148625,
+        "z": -0.031404,
+        "w": 0.935118
+      }
+    ],
+    "last": [
+      {
+        "x": -0.255989,
+        "y": 0.009186,
+        "z": -0.062014,
+        "w": 0.964629
+      },
+      {
+        "x": -0.256142,
+        "y": 0.008789,
+        "z": -0.062136,
+        "w": 0.964568
+      },
+      {
+        "x": -0.255806,
+        "y": 0.0094,
+        "z": -0.062014,
+        "w": 0.96469
+      }
+    ]
+  },
+  "events": [
+    {
+      "i": 0,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 1,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 2,
+      "type": "GYRO*",
+      "count": 31
+    },
+    {
+      "i": 33,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 0,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 34,
+      "type": "GYRO*",
+      "count": 3
+    },
+    {
+      "i": 37,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 182,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 38,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 40,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 328,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 41,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 43,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 496,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 44,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 46,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 676,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 47,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 48,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": 800,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 49,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 51,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 920,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 52,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 53,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 998,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 54,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 56,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 1120,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 57,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 58,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 1252,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 59,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 61,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 1422,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 62,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 64,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 1532,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 65,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 67,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 1698,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 68,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 69,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 1830,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 70,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 72,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": 1944,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 73,
+      "type": "GYRO*",
+      "count": 7
+    },
+    {
+      "i": 80,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 2518,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 81,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 83,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 2656,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 84,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 85,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 2784,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 86,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 88,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 2888,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 89,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 90,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3022,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 91,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 92,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": 3102,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 93,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 95,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3216,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 96,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 97,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3302,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 98,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 99,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3404,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 100,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 102,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3532,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 103,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 105,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3706,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 106,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 107,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3792,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 108,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 110,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 3932,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 111,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 113,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 4072,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 114,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 116,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": 4230,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 117,
+      "type": "GYRO*",
+      "count": 81
+    },
+    {
+      "i": 198,
+      "type": "BATTERY",
+      "batteryLevel": 100
+    },
+    {
+      "i": 199,
+      "type": "GYRO*",
+      "count": 22
+    },
+    {
+      "i": 221,
+      "type": "HARDWARE",
+      "hardwareName": "uiFp 753",
+      "softwareVersion": "8.62",
+      "hardwareVersion": "0.5",
+      "gyroSupported": true
+    },
+    {
+      "i": 222,
+      "type": "GYRO*",
+      "count": 18
+    },
+    {
+      "i": 240,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 241,
+      "type": "GYRO*",
+      "count": 35
+    },
+    {
+      "i": 276,
+      "type": "DISCONNECT"
+    }
+  ]
+}

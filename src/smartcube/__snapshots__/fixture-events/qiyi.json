@@ -1,0 +1,482 @@
+{
+  "fixture": "fixture_QY-QYSC-S-A0E6________qiyi_2026-04-14T11-37-22.json",
+  "protocol": "qiyi",
+  "deviceName": "QY-QYSC-S-A0E6       ",
+  "capabilitiesAtConnect": {
+    "gyroscope": false,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": false
+  },
+  "capabilitiesAfterDrain": {
+    "gyroscope": false,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": false
+  },
+  "counts": {
+    "FACELETS": 34,
+    "BATTERY": 1,
+    "MOVE": 30,
+    "DISCONNECT": 1
+  },
+  "gyro": {
+    "count": 0,
+    "checksum": "811c9dc5",
+    "first": [],
+    "last": []
+  },
+  "events": [
+    {
+      "i": 0,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 1,
+      "type": "BATTERY",
+      "batteryLevel": 86
+    },
+    {
+      "i": 2,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 3,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 0,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 4,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUFRRRRRRRRRFFDFFDFFDDDBDDBDDBLLLLLLLLLUBBUBBUBB"
+    },
+    {
+      "i": 5,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 137,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 6,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFFUBBRRRRRRRRRFFDFFDDDBDDBDDBFFDLLLLLLLLLUBBUBB"
+    },
+    {
+      "i": 7,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 278,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 8,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFLBRRBRRURRRRUFFUFFFDDRDDDDDDFFDLLLLLLBLLBBBBBB"
+    },
+    {
+      "i": 9,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 387,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 10,
+      "type": "FACELETS",
+      "facelets": "UULUUFUUFRRUBRRURRFFDFFUFFFDDRDDDDDDBLLLLLLLLBRRBBBBBB"
+    },
+    {
+      "i": 11,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 529,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 12,
+      "type": "FACELETS",
+      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDFBLLLLLLLLDRRDBBRBB"
+    },
+    {
+      "i": 13,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": 609,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 14,
+      "type": "FACELETS",
+      "facelets": "UUBUUBLLLURRURRBBUFFFFFFFFLRRUDDUDDFBLDLLDLLDDRRDBBRBB"
+    },
+    {
+      "i": 15,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 716,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 16,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFFRRRDDDDDDBLDLLDLLDLRRBBBBBB"
+    },
+    {
+      "i": 17,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 784,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 18,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLFUBBRRURRUFFRFFDFFDRRBDDBDDLBLDLLDLLDLRRFBBFBB"
+    },
+    {
+      "i": 19,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 895,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 20,
+      "type": "FACELETS",
+      "facelets": "UUFUULUULFFRRRURRUBLDFFDFFDRRBDDBDDLLRRLLDLLDUBBFBBFBB"
+    },
+    {
+      "i": 21,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 996,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 22,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUURUUFRRFRRBLFFFLFFLRRDDDDDDDLRRLLDLLDLBBBBBBBB"
+    },
+    {
+      "i": 23,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 1163,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 24,
+      "type": "FACELETS",
+      "facelets": "FFUUUUUUUBLFFRRFRRLRRFFLFFLRRDDDDDDDLBBLLDLLDRUUBBBBBB"
+    },
+    {
+      "i": 25,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 1245,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 26,
+      "type": "FACELETS",
+      "facelets": "FFRUULUULFFBRRLRRFLRDFFDFFDRRBDDBDDRLBBLLDLLDUUUUBBUBB"
+    },
+    {
+      "i": 27,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 1671,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 28,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLRUUURRLRRFFFBFFDFFDRRBDDBDDRLRDLLDLLDLBBUBBUBB"
+    },
+    {
+      "i": 29,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 1728,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 30,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLLULFURRURRFFFFFFFFRRRBDDDDDDLRDLLDLLDRBBBBBBBB"
+    },
+    {
+      "i": 31,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": 1914,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 32,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUUBLFRRRRRRFFRFFFFFFDDDDDDDDDLRLLLLLLLRBBBBBBBB"
+    },
+    {
+      "i": 33,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 2755,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 34,
+      "type": "FACELETS",
+      "facelets": "UURUUFUUFRRBRRLRRFFFDFFDFFDDDBDDBDDRLRLLLLLLLUBBUBBUBB"
+    },
+    {
+      "i": 35,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 2893,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 36,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFRUBBRRLRRFRRBFFDFFDDDBDDBDDRFFDLLLLLLLRLUBBUBB"
+    },
+    {
+      "i": 37,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3031,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 38,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFLBLFBRRURRRRUFFUFFRDDBDDDDDDFFDLLLLLLRRLBBBBBB"
+    },
+    {
+      "i": 39,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3116,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 40,
+      "type": "FACELETS",
+      "facelets": "UULUUFUUFRRUBRRURRFFDFFUFFRDDBDDDDDDRRLLLLLLLBLFBBBBBB"
+    },
+    {
+      "i": 41,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3259,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 42,
+      "type": "FACELETS",
+      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDRRRLLLLLLLDLFDBBBBB"
+    },
+    {
+      "i": 43,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": 3343,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 44,
+      "type": "FACELETS",
+      "facelets": "UUBUUBLLLURRURRBBUFFFFFFFFLRRUDDUDDRRRDLLDLLDDLFDBBBBB"
+    },
+    {
+      "i": 45,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3451,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 46,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFRRRBDDDDDDRRDLLDLLDLLFBBBBBB"
+    },
+    {
+      "i": 47,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3525,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 48,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLRUBBRRURRUFFBFFDFFDRRBDDBDDLRRDLLDLLDLLFFBBFBB"
+    },
+    {
+      "i": 49,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3618,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 50,
+      "type": "FACELETS",
+      "facelets": "UURUULUULFFBRRURRURRDFFDFFDRRBDDBDDLLLFLLDLLDUBBFBBFBB"
+    },
+    {
+      "i": 51,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3733,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 52,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUUBUUFRRFRRRRRFFLFFLRRDDDDDDDLLFLLDLLDLBBBBBBBB"
+    },
+    {
+      "i": 53,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3877,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 54,
+      "type": "FACELETS",
+      "facelets": "FFUUUUUUURRRFRRFRRLLFFFLFFLRRDDDDDDDLBBLLDLLDBUUBBBBBB"
+    },
+    {
+      "i": 55,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3995,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 56,
+      "type": "FACELETS",
+      "facelets": "FFFUULUULFFRRRRRRRLLDFFDFFDRRBDDBDDBLBBLLDLLDUUUUBBUBB"
+    },
+    {
+      "i": 57,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 4095,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 58,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLFUUURRRRRRFFRFFDFFDRRBDDBDDBLLDLLDLLDLBBUBBUBB"
+    },
+    {
+      "i": 59,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 4271,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 60,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLLURRURRURRFFFFFFFFFRRRDDDDDDLLDLLDLLDBBBBBBBBB"
+    },
+    {
+      "i": 61,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": 4388,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 62,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 63,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 64,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 65,
+      "type": "DISCONNECT"
+    }
+  ]
+}

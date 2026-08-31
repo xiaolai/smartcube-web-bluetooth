@@ -1,0 +1,331 @@
+{
+  "fixture": "fixture_GANicXXX_gan-gen2_2026-04-14T11-39-47.json",
+  "protocol": "gan-gen2",
+  "deviceName": "GANicXXX",
+  "capabilitiesAtConnect": {
+    "gyroscope": true,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": true
+  },
+  "capabilitiesAfterDrain": {
+    "gyroscope": false,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": true
+  },
+  "counts": {
+    "FACELETS": 2,
+    "MOVE": 30,
+    "BATTERY": 1,
+    "HARDWARE": 1,
+    "DISCONNECT": 1
+  },
+  "gyro": {
+    "count": 0,
+    "checksum": "811c9dc5",
+    "first": [],
+    "last": []
+  },
+  "events": [
+    {
+      "i": 0,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 1,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 0,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 2,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 177,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 3,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 289,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 4,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 373,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 5,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 656,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 6,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": 817,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 7,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 981,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 8,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 1054,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 9,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 1167,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 10,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 1321,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 11,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 1461,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 12,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 1558,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 13,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 1684,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 14,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 1829,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 15,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": 1986,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 16,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 2359,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 17,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 2489,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 18,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 2626,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 19,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 2728,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 20,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 2847,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 21,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": 2984,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 22,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3084,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 23,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3134,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 24,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3238,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 25,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3338,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 26,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": 3518,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 27,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": 3596,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 28,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": 3728,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 29,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": 3896,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 30,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": 4685,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 31,
+      "type": "BATTERY",
+      "batteryLevel": 83
+    },
+    {
+      "i": 32,
+      "type": "HARDWARE",
+      "hardwareName": "GANicEqV",
+      "softwareVersion": "3.12",
+      "hardwareVersion": "0.1",
+      "gyroSupported": false
+    },
+    {
+      "i": 33,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 34,
+      "type": "DISCONNECT"
+    }
+  ]
+}
