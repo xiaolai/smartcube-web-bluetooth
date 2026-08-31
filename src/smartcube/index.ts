@@ -34,4 +34,4 @@ export type {
     ConnectSmartCubeOptions,
     DeviceSelectionMode
 } from './protocol';
-export { registerProtocol, getRegisteredProtocols } from './protocol';
+export { registerProtocol, getRegisteredProtocols, unregisterProtocol } from './protocol';

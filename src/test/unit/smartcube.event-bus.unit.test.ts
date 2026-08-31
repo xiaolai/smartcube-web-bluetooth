@@ -90,3 +90,77 @@ describe('SmartCubeEventBus', () => {
     expect(lateComplete).toBe(true);
   });
 });
+
+describe('SmartCubeEventBus hardening', () => {
+  const M = (n: number): SmartCubeEvent => ({ timestamp: n, type: 'MOVE', move: 'R', face: 3, direction: 0, localTimestamp: n, cubeTimestamp: null });
+
+  it('delivers reentrant emissions to every subscriber in emission order', () => {
+    const bus = new SmartCubeEventBus(CAPS);
+    const seenByB: number[] = [];
+    let emitted = false;
+    bus.events$.subscribe((e) => {
+      if (!emitted) {
+        emitted = true;
+        bus.emit(M(2)); // subscriber A reacts to the first move by emitting another
+      }
+    });
+    bus.events$.subscribe((e) => seenByB.push(e.timestamp));
+    bus.emit(M(1));
+    expect(seenByB).toEqual([1, 2]);
+  });
+
+  it('does not expose Subject mutators on the public streams', () => {
+    const bus = new SmartCubeEventBus(CAPS);
+    expect((bus.events$ as unknown as { next?: unknown }).next).toBeUndefined();
+    expect((bus.state$ as unknown as { next?: unknown }).next).toBeUndefined();
+  });
+
+  it('counts concurrent battery forces individually', () => {
+    const bus = new SmartCubeEventBus(CAPS);
+    const events: number[] = [];
+    bus.events$.subscribe((e) => {
+      if (e.type === 'BATTERY') events.push(e.batteryLevel);
+    });
+    bus.emitBattery(80);
+    bus.forceNextBattery();
+    bus.forceNextBattery();
+    bus.emitBattery(80); // forced #1
+    bus.emitBattery(80); // forced #2
+    bus.emitBattery(80); // deduplicated again
+    expect(events).toEqual([80, 80, 80]);
+  });
+
+  it('cancelForcedBattery rolls back a force whose request failed', () => {
+    const bus = new SmartCubeEventBus(CAPS);
+    const events: number[] = [];
+    bus.events$.subscribe((e) => {
+      if (e.type === 'BATTERY') events.push(e.batteryLevel);
+    });
+    bus.emitBattery(80);
+    bus.forceNextBattery();
+    bus.cancelForcedBattery();
+    bus.emitBattery(80);
+    expect(events).toEqual([80]);
+  });
+
+  it('routes emit() BATTERY events through the clamp/dedupe policy', () => {
+    const bus = new SmartCubeEventBus(CAPS);
+    const events: number[] = [];
+    bus.events$.subscribe((e) => {
+      if (e.type === 'BATTERY') events.push(e.batteryLevel);
+    });
+    bus.emit({ timestamp: 1, type: 'BATTERY', batteryLevel: 150 });
+    bus.emit({ timestamp: 2, type: 'BATTERY', batteryLevel: 100 });
+    expect(events).toEqual([100]);
+    expect(bus.getSnapshot().battery?.value).toBe(100);
+  });
+
+  it('does not publish a new revision for a no-op capability patch', () => {
+    const bus = new SmartCubeEventBus(CAPS);
+    const before = bus.getSnapshot().revision;
+    bus.setCapabilities({ gyroscope: false });
+    bus.setCapabilities({ gyroscope: undefined as unknown as boolean });
+    expect(bus.getSnapshot().revision).toBe(before);
+    expect(bus.getSnapshot().capabilities.gyroscope).toBe(false);
+  });
+});

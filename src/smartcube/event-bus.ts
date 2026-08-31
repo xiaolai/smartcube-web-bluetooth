@@ -22,10 +22,12 @@ export class SmartCubeEventBus {
     private stopped = false;
 
     private lastBatteryLevel: number | null = null;
-    private forceNextBatteryEmission = false;
+    private forcedBatteryEmissions = 0;
+    private emitting = false;
+    private readonly pendingEmits: SmartCubeEvent[] = [];
 
-    readonly events$: Observable<SmartCubeEvent> = this.live;
-    readonly state$: Observable<SmartCubeSnapshot> = this.state;
+    readonly events$: Observable<SmartCubeEvent> = this.live.asObservable();
+    readonly state$: Observable<SmartCubeSnapshot> = this.state.asObservable();
 
     constructor(capabilities: SmartCubeCapabilities) {
         this.snapshot = Object.freeze({
@@ -56,11 +58,40 @@ export class SmartCubeEventBus {
         this.state.next(this.snapshot);
     }
 
-    /** Update the snapshot synchronously, then forward the event to live subscribers. */
+    /**
+     * Update the snapshot synchronously, then forward the event to live subscribers.
+     * A subscriber that emits reentrantly has its event queued until the current
+     * delivery finishes, so every subscriber observes events in emission order.
+     * BATTERY events are routed through the single clamp/dedupe policy.
+     */
     emit(event: SmartCubeEvent): void {
         if (this.stopped) {
             return;
         }
+        if (event.type === 'BATTERY') {
+            this.emitBattery(event.batteryLevel, event.timestamp);
+            return;
+        }
+        this.emitOrdered(event);
+    }
+
+    private emitOrdered(event: SmartCubeEvent): void {
+        if (this.emitting) {
+            this.pendingEmits.push(event);
+            return;
+        }
+        this.emitting = true;
+        try {
+            this.dispatch(event);
+            while (this.pendingEmits.length > 0) {
+                this.dispatch(this.pendingEmits.shift()!);
+            }
+        } finally {
+            this.emitting = false;
+        }
+    }
+
+    private dispatch(event: SmartCubeEvent): void {
         switch (event.type) {
             case 'FACELETS':
                 this.publish({ facelets: Object.freeze({ value: event.facelets, timestamp: event.timestamp }) });
@@ -87,27 +118,40 @@ export class SmartCubeEventBus {
      * identical levels are dropped unless an explicit REQUEST_BATTERY forced the next emission.
      */
     emitBattery(rawLevel: number, timestamp = now()): void {
+        if (this.stopped) {
+            return;
+        }
         if (!Number.isFinite(rawLevel)) {
             return;
         }
         const batteryLevel = Math.min(100, Math.max(0, Math.round(rawLevel)));
-        const forceEmission = this.forceNextBatteryEmission;
-        this.forceNextBatteryEmission = false;
+        const forceEmission = this.forcedBatteryEmissions > 0;
+        if (forceEmission) {
+            this.forcedBatteryEmissions--;
+        }
         if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
             return;
         }
         this.lastBatteryLevel = batteryLevel;
-        this.emit({ timestamp, type: 'BATTERY', batteryLevel });
+        this.emitOrdered({ timestamp, type: 'BATTERY', batteryLevel });
     }
 
-    /** The next emitBattery emits even when the level is unchanged (REQUEST_BATTERY semantics). */
+    /**
+     * The next emitBattery emits even when the level is unchanged (REQUEST_BATTERY
+     * semantics). Forces are counted, so concurrent requests each get an emission.
+     */
     forceNextBattery(): void {
-        this.forceNextBatteryEmission = true;
+        this.forcedBatteryEmissions++;
+    }
+
+    /** Roll back one forceNextBattery() after its request failed to reach the cube. */
+    cancelForcedBattery(): void {
+        this.forcedBatteryEmissions = Math.max(0, this.forcedBatteryEmissions - 1);
     }
 
     resetBatteryDedupe(): void {
         this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.forcedBatteryEmissions = 0;
     }
 
     /** Capability changes (e.g. lazy gyro detection) go through the bus so the snapshot stays true. */
@@ -115,11 +159,27 @@ export class SmartCubeEventBus {
         if (this.stopped) {
             return;
         }
-        const capabilities = Object.freeze({ ...this.snapshot.capabilities, ...patch });
+        // Drop explicitly-undefined patch values so a spread cannot violate the
+        // snapshot's boolean capability types at runtime.
+        const clean: Partial<SmartCubeCapabilities> = {};
+        for (const [key, value] of Object.entries(patch)) {
+            if (typeof value === 'boolean') {
+                (clean as Record<string, boolean>)[key] = value;
+            }
+        }
+        const capabilities = Object.freeze({ ...this.snapshot.capabilities, ...clean });
         const hardware =
-            this.snapshot.hardware && patch.gyroscope !== undefined
-                ? Object.freeze({ ...this.snapshot.hardware, gyroSupported: patch.gyroscope })
+            this.snapshot.hardware && clean.gyroscope !== undefined
+                ? Object.freeze({ ...this.snapshot.hardware, gyroSupported: clean.gyroscope })
                 : this.snapshot.hardware;
+        const unchanged =
+            hardware === this.snapshot.hardware &&
+            Object.entries(capabilities).every(
+                ([key, value]) => this.snapshot.capabilities[key as keyof SmartCubeCapabilities] === value,
+            );
+        if (unchanged) {
+            return; // no spurious revisions/state emissions for no-op patches
+        }
         this.publish({ capabilities, hardware });
     }
 
@@ -128,15 +188,10 @@ export class SmartCubeEventBus {
         if (this.stopped) {
             return;
         }
-        this.stopped = true;
         if (this.snapshot.connected) {
-            this.snapshot = Object.freeze({
-                ...this.snapshot,
-                connected: false,
-                revision: this.snapshot.revision + 1,
-            });
-            this.state.next(this.snapshot);
+            this.publish({ connected: false });
         }
+        this.stopped = true;
         this.live.complete();
         this.state.complete();
     }

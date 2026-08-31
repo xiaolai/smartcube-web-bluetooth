@@ -55,3 +55,55 @@ describe('collectPrimaryServiceUuids', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe('abort during service discovery', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('rejects promptly and disconnects when aborted during hung getPrimaryServices', async () => {
+    let disconnected = 0;
+    const gatt = {
+      connected: false,
+      connect: async () => {},
+      disconnect: () => {
+        disconnected++;
+      },
+      getPrimaryServices: () => new Promise(() => {}), // stalls forever
+    };
+    const device = { gatt } as unknown as BluetoothDevice;
+    const controller = new AbortController();
+    const p = collectPrimaryServiceUuids(device, { signal: controller.signal });
+    const expectation = expect(p).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await expectation;
+    expect(disconnected).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects promptly when aborted during the retry back-off delay', async () => {
+    let attempts = 0;
+    const gatt = {
+      connected: false,
+      connect: async () => {
+        attempts++;
+        throw new Error('transient');
+      },
+      disconnect: () => {},
+      getPrimaryServices: async () => [],
+    };
+    const device = { gatt } as unknown as BluetoothDevice;
+    const controller = new AbortController();
+    const p = collectPrimaryServiceUuids(device, { signal: controller.signal });
+    const expectation = expect(p).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(10); // inside the first 150 ms back-off now
+    controller.abort();
+    await expectation;
+    expect(attempts).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
