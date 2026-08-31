@@ -57,3 +57,48 @@ describe('moyuMhcProtocol.connect (synthetic)', () => {
   }, 10_000);
 });
 
+
+describe('moyuMhcProtocol.connect gating', () => {
+  it('reports facelets capability for turn-only devices (turn tracking emits FACELETS)', async () => {
+    const fixture = makeFixtureMhcTurnOnly();
+    const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc-caps', maxAutoFlushNotifies: 0 });
+    const conn = await moyuMhcProtocol.connect(device, undefined, {
+      serviceUuids: new Set([fixture.traffic[0]!.service]),
+      advertisementManufacturerData: null,
+      enableAddressSearch: false,
+      onStatus: undefined,
+      signal: undefined,
+    });
+    expect(conn.capabilities.facelets).toBe(true);
+    expect(conn.capabilities.battery).toBe(false);
+    await conn.disconnect();
+  }, 10_000);
+
+  it('rejects when neither turn notifications nor the v1 read/write pair exist', async () => {
+    const service = '00001000-0000-1000-8000-00805f9b34fb';
+    const chrWrite = '00001001-0000-1000-8000-00805f9b34fb';
+    const fixture: FixtureSession = {
+      format: 'smartcube-fixture',
+      version: 1,
+      capturedAt: new Date().toISOString(),
+      device: { name: 'MHC_TEST', id: '' },
+      protocol: { id: 'moyu-mhc', name: 'MoYu MHC' },
+      services: [],
+      traffic: [
+        { t: 0, op: 'discover-service', service },
+        { t: 1, op: 'discover-char', service, characteristic: chrWrite },
+      ],
+      events: [],
+    };
+    const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc-bare', maxAutoFlushNotifies: 0 });
+    await expect(
+      moyuMhcProtocol.connect(device, undefined, {
+        serviceUuids: new Set([service]),
+        advertisementManufacturerData: null,
+        enableAddressSearch: false,
+        onStatus: undefined,
+        signal: undefined,
+      }),
+    ).rejects.toThrow(/no usable protocol path/);
+  }, 10_000);
+});
