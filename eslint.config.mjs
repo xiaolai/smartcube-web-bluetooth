@@ -1,7 +1,7 @@
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-    { ignores: ['dist/', 'coverage/', 'scripts/', 'eslint.config.mjs', 'rollup.config.js', 'vitest.config.ts'] },
+    { ignores: ['dist/', 'coverage/', 'scripts/', 'tools/', 'eslint.config.mjs', 'rollup.config.js', 'vitest.config.ts'] },
     ...tseslint.configs.recommended,
     {
         languageOptions: {
