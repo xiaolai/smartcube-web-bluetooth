@@ -613,5 +613,42 @@
       "i": 84,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 1,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 3
+    },
+    "battery": null,
+    "hardware": null,
+    "capabilities": {
+      "gyroscope": false,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 45,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 93
+    },
+    "battery": {
+      "value": 100,
+      "timestamp": 5
+    },
+    "hardware": null,
+    "capabilities": {
+      "gyroscope": false,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  }
 }

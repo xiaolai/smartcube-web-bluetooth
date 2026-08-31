@@ -622,5 +622,46 @@
       "i": 155,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 0,
+    "connected": true,
+    "facelets": null,
+    "battery": null,
+    "hardware": null,
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 14,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 313
+    },
+    "battery": {
+      "value": 37,
+      "timestamp": 276
+    },
+    "hardware": {
+      "timestamp": 291,
+      "hardwareName": "GANi4",
+      "softwareVersion": "1.12",
+      "hardwareVersion": "1.0",
+      "productDate": "2025-12-11",
+      "gyroSupported": true
+    },
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  }
 }

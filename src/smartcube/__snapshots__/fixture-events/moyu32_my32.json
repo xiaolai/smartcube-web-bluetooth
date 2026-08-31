@@ -690,5 +690,57 @@
       "i": 288,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 6,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 18
+    },
+    "battery": {
+      "value": 38,
+      "timestamp": 8
+    },
+    "hardware": {
+      "timestamp": 12,
+      "hardwareName": "WCU_MY32",
+      "softwareVersion": "2.1",
+      "hardwareVersion": "2.7",
+      "gyroSupported": true
+    },
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": false
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 40,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 482
+    },
+    "battery": {
+      "value": 38,
+      "timestamp": 8
+    },
+    "hardware": {
+      "timestamp": 424,
+      "hardwareName": "WCU_MY32",
+      "softwareVersion": "2.1",
+      "hardwareVersion": "2.7",
+      "gyroSupported": true
+    },
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": false
+    }
+  }
 }

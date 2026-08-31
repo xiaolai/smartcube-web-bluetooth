@@ -327,5 +327,45 @@
       "i": 34,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 0,
+    "connected": true,
+    "facelets": null,
+    "battery": null,
+    "hardware": null,
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 5,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 68
+    },
+    "battery": {
+      "value": 83,
+      "timestamp": 66
+    },
+    "hardware": {
+      "timestamp": 67,
+      "hardwareName": "GANicEqV",
+      "softwareVersion": "3.12",
+      "hardwareVersion": "0.1",
+      "gyroSupported": false
+    },
+    "capabilities": {
+      "gyroscope": false,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  }
 }
