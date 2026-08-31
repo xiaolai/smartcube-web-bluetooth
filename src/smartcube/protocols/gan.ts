@@ -2,6 +2,7 @@ import { Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
+import { throwIfAborted } from '../attachment/abort';
 import { getCachedMacForDevice, macFromGanManufacturerData, waitForManufacturerData } from '../attachment/address-hints';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
 import * as def from '../../gan-cube-definitions';
@@ -175,6 +176,7 @@ async function connectGanDevice(
     macProvider?: MacAddressProvider,
     context?: AttachmentContext
 ): Promise<SmartCubeConnection> {
+    throwIfAborted(context?.signal);
     const bleDevice = device as BluetoothDeviceWithMAC;
     const gatt = device.gatt!;
     if (!gatt.connected) {
@@ -212,6 +214,7 @@ async function connectGanDevice(
         }
     }
 
+    throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine cube MAC address, connection is not possible!');
     }
@@ -298,20 +301,24 @@ const ganProtocol: SmartCubeProtocol = {
         def.GAN_GEN4_SERVICE,
     ],
     optionalManufacturerData: def.GAN_CIC_LIST,
+    needsMac: true,
 
     matchesDevice(device: BluetoothDevice): boolean {
         const name = device.name || '';
         return name.startsWith('GAN') || name.startsWith('MG') || name.startsWith('AiCube');
     },
 
-    gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
+    gattAffinity(serviceUuids: ReadonlySet<string>, device: BluetoothDevice): number {
         const g2 = normalizeUuid(def.GAN_GEN2_SERVICE);
         const g3 = normalizeUuid(def.GAN_GEN3_SERVICE);
         const g4 = normalizeUuid(def.GAN_GEN4_SERVICE);
         const g1Primary = normalizeUuid(def.GAN_GEN1_PRIMARY_SERVICE);
         const deviceInfo = normalizeUuid(def.GAN_GEN1_DEVICE_INFO_SERVICE);
         const bonus = serviceUuids.has(deviceInfo) ? 5 : 0;
-        if (serviceUuids.has(g1Primary) && serviceUuids.has(deviceInfo)) {
+        // fff0 + Device Information is not GAN-specific (QiYi/XMD expose fff0, many devices
+        // expose DIS); claim the gen1 profile only for GAN-style names so those cubes are not
+        // routed into the gen1 key-derivation path. Other GAN generations still score below.
+        if (serviceUuids.has(g1Primary) && serviceUuids.has(deviceInfo) && ganProtocol.matchesDevice(device)) {
             return 125 + bonus;
         }
         if (serviceUuids.has(g4)) {

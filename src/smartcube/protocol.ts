@@ -11,6 +11,12 @@ interface SmartCubeProtocol {
     nameFilters: SmartCubeNameFilter[];
     optionalServices: string[];
     optionalManufacturerData?: number[];
+    /**
+     * True when the driver must learn the cube's Bluetooth address (key derivation) before it can
+     * talk to the cube. `connectSmartCube()` skips the pre-connect advertisement wait when every
+     * protocol whose name filter matches the selected device leaves this unset.
+     */
+    needsMac?: boolean;
     matchesDevice(device: BluetoothDevice): boolean;
     /**
      * Higher scores win when choosing a driver from primary service UUIDs.

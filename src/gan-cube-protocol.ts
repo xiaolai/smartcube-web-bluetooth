@@ -264,12 +264,26 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         );
     }
 
-    onStateUpdate = async (evt: Event) => {
+    /**
+     * Notifications are processed strictly in arrival order. handleStateEvent can await a GATT
+     * write (move-history request); without the chain a later notification could finish first
+     * and emit its recovered moves before the earlier one's, reordering MOVE events.
+     */
+    private notificationChain: Promise<void> = Promise.resolve();
+
+    onStateUpdate = (evt: Event): void => {
+        var characteristic = evt.target as BluetoothRemoteGATTCharacteristic;
+        var eventMessage = characteristic.value;
+        if (!eventMessage || eventMessage.byteLength < 16) return;
+        // Copy now: the platform may reuse the DataView's buffer before the queued handler runs.
+        var raw = new Uint8Array(
+            eventMessage.buffer.slice(eventMessage.byteOffset, eventMessage.byteOffset + eventMessage.byteLength)
+        );
+        this.notificationChain = this.notificationChain.then(() => this.handleNotification(raw));
+    }
+
+    private async handleNotification(raw: Uint8Array): Promise<void> {
         try {
-            var characteristic = evt.target as BluetoothRemoteGATTCharacteristic;
-            var eventMessage = characteristic.value;
-            if (!eventMessage || eventMessage.byteLength < 16) return;
-            var raw = new Uint8Array(eventMessage.buffer, eventMessage.byteOffset, eventMessage.byteLength);
             var decryptedMessage = this.encrypter.decrypt(raw);
             if (this.validateDecrypted && !this.validateDecrypted(decryptedMessage)) return;
             var cubeEvents = await this.driver.handleStateEvent(this, decryptedMessage);

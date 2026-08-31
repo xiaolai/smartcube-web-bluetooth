@@ -5,6 +5,7 @@ import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabil
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { throwIfAborted } from '../attachment/abort';
 import { parseMacBytes } from '../attachment/mac-address';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
@@ -448,6 +449,7 @@ async function connectMoyu32Device(
     macProvider?: MacAddressProvider,
     context?: AttachmentContext
 ): Promise<SmartCubeConnection> {
+    throwIfAborted(context?.signal);
     let mac = parseMoyu32MacFromMf(context?.advertisementManufacturerData ?? null);
     mac = mac || getCachedMacForDevice(device);
     if (!mac && macProvider) {
@@ -496,6 +498,7 @@ async function connectMoyu32Device(
         }
     }
 
+    throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine MoYu32 cube MAC address');
     }
@@ -508,6 +511,7 @@ async function connectMoyu32Device(
 const moyu32Protocol: SmartCubeProtocol = {
     nameFilters: [{ namePrefix: '^S' }, { namePrefix: 'WCU_' }, { namePrefix: 'WCU_MY3' }],
     optionalServices: [SERVICE_UUID],
+    needsMac: true,
 
     matchesDevice(device: BluetoothDevice): boolean {
         const name = device.name || '';

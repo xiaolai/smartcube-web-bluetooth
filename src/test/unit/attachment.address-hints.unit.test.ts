@@ -93,6 +93,25 @@ describe('waitForManufacturerData', () => {
     await vi.runAllTimersAsync();
     await expect(p).resolves.toBeNull();
   });
+
+  it('resolves null immediately when the signal is already aborted', async () => {
+    const device = advertisingDevice('GANic');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(waitForManufacturerData(device, 1000, { signal: controller.signal })).resolves.toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('resolves null when aborted mid-wait and ignores later advertisements', async () => {
+    const device = advertisingDevice('GANic');
+    const controller = new AbortController();
+    const p = waitForManufacturerData(device, 1000, { signal: controller.signal });
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await expect(p).resolves.toBeNull();
+    device.emitAdvertisement(mfWith(0x0001, [1, 2, 3, 4, 5, 6]));
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 describe('macFromGanManufacturerData', () => {

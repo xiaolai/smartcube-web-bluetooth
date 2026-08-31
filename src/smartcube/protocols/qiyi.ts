@@ -4,6 +4,7 @@ import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabil
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { throwIfAborted } from '../attachment/abort';
 import { parseMacBytes } from '../attachment/mac-address';
 import { buildQiYiMacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeQiYiMac } from '../attachment/mac-probe-qiyi';
@@ -409,6 +410,7 @@ async function connectQiYiDevice(
     macProvider?: MacAddressProvider,
     context?: AttachmentContext
 ): Promise<SmartCubeConnection> {
+    throwIfAborted(context?.signal);
     let mac = parseQiYiMacFromMf(context?.advertisementManufacturerData ?? null);
     mac = mac || getCachedMacForDevice(device);
     if (!mac && macProvider) {
@@ -464,6 +466,7 @@ async function connectQiYiDevice(
         }
     }
 
+    throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine QiYi cube MAC address');
     }
@@ -480,6 +483,7 @@ const qiyiProtocol: SmartCubeProtocol = {
     ],
     optionalServices: [SERVICE_UUID],
     optionalManufacturerData: QIYI_CIC_LIST,
+    needsMac: true,
 
     matchesDevice(device: BluetoothDevice): boolean {
         const name = device.name || '';
