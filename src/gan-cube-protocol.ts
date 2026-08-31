@@ -350,6 +350,8 @@ class GanMoveHistoryBuffer {
 export type GanClassicConnectionOptions = {
     /** If set, decrypted payloads that fail this check are dropped (wrong MAC / noise). */
     validateDecrypted?: (plaintext: Uint8Array) => boolean;
+    /** Subject to emit into; lets a caller observe events emitted while create() is still running. */
+    events$?: Subject<GanCubeEvent>;
 };
 
 /**
@@ -376,7 +378,8 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         stateCharacteristic: BluetoothRemoteGATTCharacteristic,
         encrypter: GanCubeEncrypter,
         driver: GanProtocolDriver,
-        validateDecrypted?: (plaintext: Uint8Array) => boolean
+        validateDecrypted?: (plaintext: Uint8Array) => boolean,
+        events$?: Subject<GanCubeEvent>
     ) {
         this.device = device;
         this.commandCharacteristic = commandCharacteristic;
@@ -384,7 +387,7 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         this.encrypter = encrypter;
         this.driver = driver;
         this.validateDecrypted = validateDecrypted;
-        this.events$ = new Subject<GanCubeEvent>();
+        this.events$ = events$ ?? new Subject<GanCubeEvent>();
     }
 
     public static async create(
@@ -401,7 +404,8 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
             stateCharacteristic,
             encrypter,
             driver,
-            options?.validateDecrypted
+            options?.validateDecrypted,
+            options?.events$
         );
         conn.device.addEventListener('gattserverdisconnected', conn.onDisconnect);
         conn.stateCharacteristic.addEventListener('characteristicvaluechanged', conn.onStateUpdate);

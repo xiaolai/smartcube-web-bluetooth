@@ -100,7 +100,7 @@ class GoCubeConnection implements SmartCubeConnection {
     private batteryInterval: ReturnType<typeof setInterval> | null = null;
     /** Last decoded move (axis + direction bit) for short type-1 frames that omit a full pair of bytes. */
     private lastMoveMeta: { axis: number; dirBit: number } | null = null;
-    /** First full-state (type 2) after connect: defer FACELETS until `init` finishes so subscribers never miss it. */
+    /** First full-state (type 2) after connect resolves the init wait; the bus snapshot preserves it for late subscribers. */
     private awaitingInitialState = false;
     private resolveInitialState: (() => void) | undefined;
 
@@ -319,12 +319,12 @@ class GoCubeConnection implements SmartCubeConnection {
         this.awaitingInitialState = false;
         this.resolveInitialState = undefined;
 
-        queueMicrotask(() => {
-            this.bus.emit({
-                timestamp: now(),
-                type: "FACELETS",
-                facelets: this.prevCubie.toFaceCube()
-            });
+        // Emit the initial state synchronously: live subscribers cannot exist yet, but the
+        // bus snapshot preserves it for state$/getSnapshot().
+        this.bus.emit({
+            timestamp: now(),
+            type: "FACELETS",
+            facelets: this.prevCubie.toFaceCube()
         });
     }
 

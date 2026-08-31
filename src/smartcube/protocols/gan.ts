@@ -1,4 +1,4 @@
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
 import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
@@ -85,6 +85,24 @@ function ganEventToSmartEvent(event: GanCubeEvent): SmartCubeEvent {
     }
 }
 
+/**
+ * Run a legacy create() with an events subject we own, buffering everything it emits before
+ * the SmartCube wrapper exists, so the initial FACELETS/BATTERY reach the state snapshot.
+ */
+async function createWithCapturedInit<T>(
+    create: (events$: Subject<GanCubeEvent>) => Promise<T>
+): Promise<{ result: T; captured: GanCubeEvent[] }> {
+    const events$ = new Subject<GanCubeEvent>();
+    const captured: GanCubeEvent[] = [];
+    const sub = events$.subscribe((e) => captured.push(e));
+    try {
+        const result = await create(events$);
+        return { result, captured };
+    } finally {
+        sub.unsubscribe();
+    }
+}
+
 class GanSmartCubeConnection implements SmartCubeConnection {
     private ganConn: GanCubeConnection;
     private deviceMac: string;
@@ -106,23 +124,32 @@ class GanSmartCubeConnection implements SmartCubeConnection {
         this.events$ = this.bus.events$;
         this.state$ = this.bus.state$;
         ganConn.events$.subscribe({
-            next: (event) => {
-                if (
-                    event.type === 'HARDWARE' &&
-                    this.protocol.id === 'gan-gen2' &&
-                    typeof event.gyroSupported === 'boolean' &&
-                    this.capabilities.gyroscope !== event.gyroSupported
-                ) {
-                    this.bus.setCapabilities({ gyroscope: event.gyroSupported });
-                }
-                if (event.type === 'BATTERY') {
-                    this.bus.emitBattery(event.batteryLevel, event.timestamp);
-                    return;
-                }
-                this.bus.emit(ganEventToSmartEvent(event));
-            },
+            next: this.forwardLegacyEvent,
             complete: () => this.bus.complete(),
         });
+    }
+
+    private readonly forwardLegacyEvent = (event: GanCubeEvent): void => {
+        if (
+            event.type === 'HARDWARE' &&
+            this.protocol.id === 'gan-gen2' &&
+            typeof event.gyroSupported === 'boolean' &&
+            this.capabilities.gyroscope !== event.gyroSupported
+        ) {
+            this.bus.setCapabilities({ gyroscope: event.gyroSupported });
+        }
+        if (event.type === 'BATTERY') {
+            this.bus.emitBattery(event.batteryLevel, event.timestamp);
+            return;
+        }
+        this.bus.emit(ganEventToSmartEvent(event));
+    };
+
+    /** Events the legacy connection emitted during init, before this wrapper could subscribe. */
+    replayCapturedEvents(events: GanCubeEvent[]): void {
+        for (const event of events) {
+            this.forwardLegacyEvent(event);
+        }
     }
 
     get capabilities(): SmartCubeCapabilities {
@@ -169,8 +196,12 @@ async function connectGanDevice(
     const serviceUuidSet = new Set(services.map((s) => normalizeUuid(s.uuid)));
 
     if (hasGanGen1Profile(serviceUuidSet)) {
-        const gen1Conn = await GanGen1CubeConnection.create(device);
-        return new GanSmartCubeConnection(gen1Conn, '', GAN_GEN1_PROTOCOL, GAN_GEN1_CAPABILITIES);
+        const { result: gen1Conn, captured } = await createWithCapturedInit((events$) =>
+            GanGen1CubeConnection.create(device, events$)
+        );
+        const wrapped = new GanSmartCubeConnection(gen1Conn, '', GAN_GEN1_PROTOCOL, GAN_GEN1_CAPABILITIES);
+        wrapped.replayCapturedEvents(captured);
+        return wrapped;
     }
 
     let mac: string | null = null;
@@ -203,12 +234,14 @@ async function connectGanDevice(
     }
     bleDevice.mac = mac;
 
-    const created = await createGanClassicConnection(bleDevice, gatt, serviceUuidSet, mac);
+    const { result: created, captured } = await createWithCapturedInit((events$) =>
+        createGanClassicConnection(bleDevice, gatt, serviceUuidSet, mac, { events$ })
+    );
     if (!created) {
         throw new Error("Can't find target BLE services - wrong or unsupported cube device model");
     }
 
-    return new GanSmartCubeConnection(
+    const wrapped = new GanSmartCubeConnection(
         created.conn,
         mac,
         created.generation === 'gen2'
@@ -217,6 +250,8 @@ async function connectGanDevice(
               ? GAN_GEN3_PROTOCOL
               : GAN_GEN4_PROTOCOL,
     );
+    wrapped.replayCapturedEvents(captured);
+    return wrapped;
 }
 
 const GAN_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'GAN' }, { namePrefix: 'MG' }, { namePrefix: 'AiCube' }];
