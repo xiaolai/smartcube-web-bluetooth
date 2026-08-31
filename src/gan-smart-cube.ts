@@ -9,6 +9,7 @@ import {
     isValidGanGen4Packet,
 } from './gan-gen234-packet-validate';
 import { normalizeUuid } from './smartcube/attachment/normalize-uuid';
+import { macFromGanManufacturerData, waitForManufacturerData } from './smartcube/attachment/address-hints';
 import {
     BluetoothDeviceWithMAC,
     GanCubeConnection,
@@ -21,55 +22,10 @@ import {
     GanGen4ProtocolDriver
 } from './gan-cube-protocol';
 
-/** Iterate over all known GAN cube CICs to find Manufacturer Specific Data */
-function getManufacturerDataBytes(manufacturerData: BluetoothManufacturerData | DataView): DataView | undefined {
-    // Workaround for Bluefy browser which may return raw DataView directly instead of Map
-    if (manufacturerData instanceof DataView) {
-        return new DataView(manufacturerData.buffer.slice(2, 11));
-    }
-    for (var id of def.GAN_CIC_LIST) {
-        if (manufacturerData.has(id)) {
-            return new DataView(manufacturerData.get(id)!.buffer.slice(0, 9));
-        }
-    }
-    return;
-}
-
-/** Extract MAC from last 6 bytes of Manufacturer Specific Data */
-function extractMAC(manufacturerData: BluetoothManufacturerData): string {
-    var mac: Array<string> = [];
-    var dataView = getManufacturerDataBytes(manufacturerData);
-    if (dataView && dataView.byteLength >= 6) {
-        for (let i = 1; i <= 6; i++) {
-            mac.push(dataView.getUint8(dataView.byteLength - i).toString(16).toUpperCase().padStart(2, "0"));
-        }
-    }
-    return mac.join(":");
-}
-
-/** If browser supports Web Bluetooth watchAdvertisements() API, try to retrieve MAC address automatically */
+/** If the browser supports watchAdvertisements(), read the MAC from advertisement manufacturer data. */
 async function autoRetrieveMacAddress(device: BluetoothDevice): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
-        if (typeof device.watchAdvertisements != 'function') {
-            resolve(null);
-            return;
-        }
-        var abortController = new AbortController();
-        var onAdvEvent = (evt: Event) => {
-            device.removeEventListener("advertisementreceived", onAdvEvent);
-            abortController.abort();
-            var mac = extractMAC((evt as BluetoothAdvertisingEvent).manufacturerData);
-            resolve(mac || null);
-        };
-        var onAbort = () => {
-            device.removeEventListener("advertisementreceived", onAdvEvent);
-            abortController.abort();
-            resolve(null);
-        };
-        device.addEventListener("advertisementreceived", onAdvEvent);
-        device.watchAdvertisements({ signal: abortController.signal }).catch(onAbort);
-        setTimeout(onAbort, 5000);
-    });
+    const mf = await waitForManufacturerData(device, 5000);
+    return mf ? macFromGanManufacturerData(mf) : null;
 }
 
 function hasGanGen1Profile(serviceUuids: ReadonlySet<string>): boolean {
