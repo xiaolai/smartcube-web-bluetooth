@@ -318,11 +318,7 @@ class Moyu32Connection implements SmartCubeConnection {
         this.writeChrct = findCharacteristic(chrcts, CHRT_UUID_WRITE);
 
         if (!this.readChrct || !this.writeChrct) {
-            throw new Error(
-                !this.readChrct
-                    ? '[Moyu32] Cannot find required characteristics'
-                    : '[Moyu32] Cannot find write characteristic'
-            );
+            throw new Error('[Moyu32] Cannot find read/write characteristics');
         }
 
         this.readChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);

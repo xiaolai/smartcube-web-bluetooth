@@ -134,14 +134,6 @@ export class TrafficReplayer {
   }
 
   /**
-   * Some protocol code performs discovery with varying redundancy. We keep discovery loose:
-   * it can happen with or without matching fixture entries.
-   */
-  noteDiscovery(): void {
-    // no-op; reserved for future stricter discovery assertions
-  }
-
-  /**
    * Deliver all remaining `notify` entries in the fixture, in order.
    * Useful after a successful connect when the real cube would keep streaming notifications.
    */

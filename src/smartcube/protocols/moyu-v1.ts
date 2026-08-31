@@ -4,11 +4,9 @@ import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
  * MoYu BLE API v1: fragmented request/response on 0x1001 / 0x1002 and cube-state payload parsing.
  */
 
-const MOYU_V1_CMD_TIME = 1;
 const MOYU_V1_CMD_HW = 2;
 const MOYU_V1_CMD_BATTERY = 3;
 const MOYU_V1_CMD_CUBE_STATE = 10;
-const MOYU_V1_CMD_SLEEP = 6;
 
 /** Sticker id 0–5 → center color letter (MoYu face order D,L,B,R,F,U). */
 const STICKER_ID_TO_COLOR = 'DLBRFU';
@@ -312,25 +310,6 @@ export class MoyuV1Client {
         };
     }
 
-    async getTime(): Promise<{
-        sentAt: number;
-        receivedAt: number;
-        value: { seconds: number; counter: number };
-    }> {
-        const r = await this.send(MOYU_V1_CMD_TIME);
-        const v = r.value;
-        return {
-            sentAt: r.sentAt,
-            receivedAt: r.receivedAt,
-            value: { seconds: v.getUint16(0, true), counter: v.getUint16(2, true) },
-        };
-    }
-
-    async setSleepState(state: number): Promise<void> {
-        const e = new Uint8Array(1);
-        new DataView(e.buffer).setUint8(0, state);
-        await this.send(MOYU_V1_CMD_SLEEP, e);
-    }
 }
 
 export { MOYU_V1_SOLVED_STICKERS };
