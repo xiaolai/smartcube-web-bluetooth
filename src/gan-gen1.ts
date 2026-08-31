@@ -15,17 +15,18 @@ class GanGen1Aes {
         this.aes = new aesjs.AES([...keyBytes]) as AesBlockCipher;
     }
 
+    /** Two overlapping ECB blocks: the tail 16 bytes first, then the head 16 bytes. */
     decrypt(data: Uint8Array): Uint8Array {
         if (data.length < 16) throw new Error('Invalid data length');
-        const t = Array.from(data);
-        if (t.length > 16) {
-            const i = t.length - 16;
-            const n = this.aes.decrypt(t.slice(i, i + 16));
-            for (let r = 0; r < 16; r++) t[r + i] = n[r]!;
+        const bytes = Array.from(data);
+        if (bytes.length > 16) {
+            const tailOffset = bytes.length - 16;
+            const tailPlain = this.aes.decrypt(bytes.slice(tailOffset, tailOffset + 16));
+            for (let i = 0; i < 16; i++) bytes[tailOffset + i] = tailPlain[i]!;
         }
-        const s = this.aes.decrypt(t.slice(0, 16));
-        for (let r = 0; r < 16; r++) t[r] = s[r]!;
-        return new Uint8Array(t);
+        const headPlain = this.aes.decrypt(bytes.slice(0, 16));
+        for (let i = 0; i < 16; i++) bytes[i] = headPlain[i]!;
+        return new Uint8Array(bytes);
     }
 }
 
@@ -41,28 +42,30 @@ export function deriveGen1Key(fwVersion: number, hw: DataView): Uint8Array | nul
     return new Uint8Array(arr.slice(0, 16));
 }
 
-function gyroFromState(t: Uint8Array): { x: number; y: number; z: number; w: number } | null {
-    if (t.length < 6) return null;
-    let x0 = t[0]! | (t[1]! << 8);
-    let x1 = t[2]! | (t[3]! << 8);
-    let x2 = t[4]! | (t[5]! << 8);
-    if (x0 > 32767) x0 -= 65536;
-    if (x1 > 32767) x1 -= 65536;
-    if (x2 > 32767) x2 -= 65536;
-    const r = x0 / 16384;
-    const s = x1 / 16384;
-    const a = x2 / 16384;
-    const o = 1 - r * r - s * s - a * a;
-    return { x: r, y: a, z: -s, w: o > 0 ? Math.sqrt(o) : 0 };
+/** Three signed 14-bit-scaled components; w is reconstructed from the unit-quaternion invariant. */
+function gyroFromState(state: Uint8Array): { x: number; y: number; z: number; w: number } | null {
+    if (state.length < 6) return null;
+    let raw0 = state[0]! | (state[1]! << 8);
+    let raw1 = state[2]! | (state[3]! << 8);
+    let raw2 = state[4]! | (state[5]! << 8);
+    if (raw0 > 32767) raw0 -= 65536;
+    if (raw1 > 32767) raw1 -= 65536;
+    if (raw2 > 32767) raw2 -= 65536;
+    const n0 = raw0 / 16384;
+    const n1 = raw1 / 16384;
+    const n2 = raw2 / 16384;
+    const wSquared = 1 - n0 * n0 - n1 * n1 - n2 * n2;
+    return { x: n0, y: n2, z: -n1, w: wSquared > 0 ? Math.sqrt(wSquared) : 0 };
 }
 
-function parseGen1Facelets(t: Uint8Array): string {
+/** Six faces of eight 3-bit stickers each (bytes pair-swapped on the wire); centers are implied. */
+function parseGen1Facelets(bytes: Uint8Array): string {
     const out: string[] = [];
-    for (let i = 0; i < t.length - 2; i += 3) {
-        const n = (t[1 ^ i]! << 16) | (t[(i + 1) ^ 1]! << 8) | t[(i + 2) ^ 1]!;
-        for (let r = 21; r >= 0; r -= 3) {
-            out.push('URFDLB'.charAt((n >> r) & 7));
-            if (r === 12) out.push('URFDLB'.charAt(i / 3));
+    for (let i = 0; i < bytes.length - 2; i += 3) {
+        const faceBits = (bytes[1 ^ i]! << 16) | (bytes[(i + 1) ^ 1]! << 8) | bytes[(i + 2) ^ 1]!;
+        for (let shift = 21; shift >= 0; shift -= 3) {
+            out.push('URFDLB'.charAt((faceBits >> shift) & 7));
+            if (shift === 12) out.push('URFDLB'.charAt(i / 3));
         }
     }
     return out.join('');
