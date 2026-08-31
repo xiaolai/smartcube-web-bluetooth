@@ -1,12 +1,11 @@
 
 import { Subject } from 'rxjs';
-import aesjs from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
 import { throwIfAborted } from '../attachment/abort';
-import { parseMacBytes } from '../attachment/mac-address';
+import { createMoyu32SessionCrypto, type Moyu32SessionCrypto } from '../attachment/moyu32-session-crypto';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
@@ -22,11 +21,6 @@ const CHRT_UUID_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
 const ENABLE_GYRO_PAYLOAD = Object.freeze([
     172, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]) as readonly number[];
-
-const { ModeOfOperation } = aesjs;
-
-const BASE_KEY = [21, 119, 58, 92, 103, 14, 45, 31, 23, 103, 42, 19, 155, 103, 82, 87];
-const BASE_IV = [17, 35, 38, 37, 134, 42, 44, 59, 85, 6, 127, 49, 126, 103, 33, 87];
 
 /**
  * Parse 6 MAC octets from a manufacturer data DataView into canonical `aa:bb:…` form.
@@ -68,60 +62,6 @@ function parseMoyu32MacFromMf(mfData: BluetoothManufacturerData | DataView | nul
     return null;
 }
 
-class Moyu32Encrypter {
-    private key: number[];
-    private iv: number[];
-
-    constructor(macBytes: number[]) {
-        this.key = BASE_KEY.slice();
-        this.iv = BASE_IV.slice();
-        for (let i = 0; i < 6; i++) {
-            this.key[i] = (this.key[i] + macBytes[5 - i]) % 255;
-            this.iv[i] = (this.iv[i] + macBytes[5 - i]) % 255;
-        }
-    }
-
-    decrypt(data: number[]): number[] {
-        const ret = data.slice();
-        const cipher = new ModeOfOperation.ecb(new Uint8Array(this.key));
-        if (ret.length > 16) {
-            const offset = ret.length - 16;
-            const block = cipher.decrypt(new Uint8Array(ret.slice(offset)));
-            for (let i = 0; i < 16; i++) {
-                ret[i + offset] = block[i] ^ (~~this.iv[i]);
-            }
-        }
-        const block = cipher.decrypt(new Uint8Array(ret.slice(0, 16)));
-        for (let i = 0; i < 16; i++) {
-            ret[i] = block[i] ^ (~~this.iv[i]);
-        }
-        return ret;
-    }
-
-    encrypt(data: number[]): number[] {
-        const ret = data.slice();
-        const cipher = new ModeOfOperation.ecb(new Uint8Array(this.key));
-        for (let i = 0; i < 16; i++) {
-            ret[i] ^= ~~this.iv[i];
-        }
-        const block = cipher.encrypt(new Uint8Array(ret.slice(0, 16)));
-        for (let i = 0; i < 16; i++) {
-            ret[i] = block[i];
-        }
-        if (ret.length > 16) {
-            const offset = ret.length - 16;
-            for (let i = 0; i < 16; i++) {
-                ret[i + offset] ^= ~~this.iv[i];
-            }
-            const block2 = cipher.encrypt(new Uint8Array(ret.slice(offset, offset + 16)));
-            for (let i = 0; i < 16; i++) {
-                ret[i + offset] = block2[i];
-            }
-        }
-        return ret;
-    }
-}
-
 function parseFacelet(faceletBits: string): string {
     const state: string[] = [];
     const faces = [2, 5, 0, 3, 4, 1]; // parse in order URFDLB instead of FBUDLR
@@ -155,7 +95,7 @@ class Moyu32Connection implements SmartCubeConnection {
     private device: BluetoothDevice;
     private readChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private writeChrct: BluetoothRemoteGATTCharacteristic | null = null;
-    private encrypter: Moyu32Encrypter | null = null;
+    private encrypter: Moyu32SessionCrypto | null = null;
     private prevCubie = new CubieCube();
     private curCubie = new CubieCube();
     private latestFacelet = SOLVED_FACELET;
@@ -388,9 +328,8 @@ class Moyu32Connection implements SmartCubeConnection {
         this.readChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
         await this.readChrct.startNotifications();
 
-        // Initialize encryption with MAC
-        const macBytes = parseMacBytes(this.deviceMAC);
-        this.encrypter = new Moyu32Encrypter(macBytes);
+        // Initialize encryption with MAC (shared with the MAC probe, so both always agree)
+        this.encrypter = createMoyu32SessionCrypto(this.deviceMAC);
 
         await this.sendSimpleRequest(161); // Request cube info
         await this.sendSimpleRequest(163); // Request cube status (facelets)
