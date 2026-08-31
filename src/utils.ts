@@ -7,22 +7,21 @@ import { GanCubeMove } from './gan-cube-protocol';
  * @returns Current host clock timestamp in milliseconds
  */
 const now: () => number =
-    typeof window != 'undefined' && typeof window.performance?.now == 'function' ?
+    typeof window !== 'undefined' && typeof window.performance?.now === 'function' ?
         () => Math.floor(window.performance.now()) :
-        typeof process != 'undefined' && typeof process.hrtime?.bigint == 'function' ?
+        typeof process !== 'undefined' && typeof process.hrtime?.bigint === 'function' ?
             () => Number(process.hrtime.bigint() / 1_000_000n) :
             () => Date.now();
 
 function linregress(X: Array<number | null>, Y: Array<number | null>) {
-    var sumX = 0;
-    var sumY = 0;
-    var sumXY = 0;
-    var sumXX = 0;
-    var sumYY = 0;
-    var n = 0;
-    for (var i = 0; i < X.length; i++) {
-        var x = X[i];
-        var y = Y[i];
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumXX = 0;
+    let n = 0;
+    for (let i = 0; i < X.length; i++) {
+        const x = X[i];
+        const y = Y[i];
         if (x == null || y == null) {
             continue;
         }
@@ -31,12 +30,11 @@ function linregress(X: Array<number | null>, Y: Array<number | null>) {
         sumY += y;
         sumXY += x * y;
         sumXX += x * x;
-        sumYY += y * y;
     }
-    var varX = n * sumXX - sumX * sumX;
-    var covXY = n * sumXY - sumX * sumY;
-    var slope = varX < 1e-3 ? 1 : covXY / varX;
-    var intercept = n < 1 ? 0 : sumY / n - slope * sumX / n;
+    const varX = n * sumXX - sumX * sumX;
+    const covXY = n * sumXY - sumX * sumY;
+    const slope = varX < 1e-3 ? 1 : covXY / varX;
+    const intercept = n < 1 ? 0 : sumY / n - slope * sumX / n;
     return [slope, intercept];
 }
 
@@ -47,7 +45,7 @@ function linregress(X: Array<number | null>, Y: Array<number | null>) {
  */
 function cubeTimestampLinearFit(cubeMoves: Array<GanCubeMove>): Array<GanCubeMove> {
     // Work on copies: the caller's move objects are never modified.
-    var moves: Array<GanCubeMove> = cubeMoves.map(m => ({ ...m }));
+    const moves: Array<GanCubeMove> = cubeMoves.map(m => ({ ...m }));
     // Calculate and fix timestamp values for missed and recovered cube moves.
     if (moves.length >= 2) {
         // 1st pass - tail-to-head, align missed move cube timestamps to next move -50ms
@@ -66,9 +64,9 @@ function cubeTimestampLinearFit(cubeMoves: Array<GanCubeMove>): Array<GanCubeMov
         return moves;
     }
     // Apply linear regression to the cube timestamps
-    var res: Array<GanCubeMove> = [];
-    var [slope, intercept] = linregress(moves.map(m => m.cubeTimestamp), moves.map(m => m.localTimestamp));
-    var first = Math.round(slope * moves[0].cubeTimestamp + intercept);
+    const res: Array<GanCubeMove> = [];
+    const [slope, intercept] = linregress(moves.map(m => m.cubeTimestamp), moves.map(m => m.localTimestamp));
+    const first = Math.round(slope * moves[0].cubeTimestamp + intercept);
     moves.forEach(m => {
         res.push({
             face: m.face,
@@ -88,7 +86,7 @@ function cubeTimestampLinearFit(cubeMoves: Array<GanCubeMove>): Array<GanCubeMov
  */
 function cubeTimestampCalcSkew(cubeMoves: Array<GanCubeMove>): number {
     if (!cubeMoves.length) return 0;
-    var [slope] = linregress(cubeMoves.map(m => m.localTimestamp), cubeMoves.map(m => m.cubeTimestamp));
+    const [slope] = linregress(cubeMoves.map(m => m.localTimestamp), cubeMoves.map(m => m.cubeTimestamp));
     return Math.round((slope - 1) * 100000) / 1000;
 }
 
@@ -143,8 +141,8 @@ const EDGE_FACELET_MAP = [
  * 
  */
 function toKociembaFacelets(cp: Array<number>, co: Array<number>, ep: Array<number>, eo: Array<number>): string {
-    var faces = "URFDLB";
-    var facelets: Array<string> = [];
+    const faces = "URFDLB";
+    const facelets: Array<string> = [];
     for (let i = 0; i < 54; i++) {
         facelets[i] = faces[~~(i / 9)];
     }

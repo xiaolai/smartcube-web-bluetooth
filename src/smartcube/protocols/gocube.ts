@@ -164,8 +164,9 @@ class GoCubeConnection implements SmartCubeConnection {
 
         if (++this.moveCntFree > 20) {
             this.moveCntFree = 0;
-            this.writeChrct &&
+            if (this.writeChrct) {
                 writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_STATE]).buffer).catch(() => {});
+            }
         }
     }
 

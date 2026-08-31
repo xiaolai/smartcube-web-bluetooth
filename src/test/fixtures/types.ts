@@ -27,7 +27,7 @@ export type FixtureProtocolInfo = {
 
 export type FixtureCubeEvent = {
   t: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   event: any;
 };
 

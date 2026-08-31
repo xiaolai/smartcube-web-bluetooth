@@ -93,23 +93,23 @@ class CubieCube {
         const centers = facelet[4] + facelet[13] + facelet[22] + facelet[31] + facelet[40] + facelet[49];
         for (let i = 0; i < 54; ++i) {
             fArr[i] = centers.indexOf(facelet[i]);
-            if (fArr[i] == -1) {
+            if (fArr[i] === -1) {
                 return -1;
             }
             count += 1 << (fArr[i] << 2);
         }
-        if (count != 0x999999) {
+        if (count !== 0x999999) {
             return -1;
         }
         for (let i = 0; i < 8; ++i) {
             let ori: number;
             for (ori = 0; ori < 3; ++ori) {
-                if (fArr[cf[i][ori]] == 0 || fArr[cf[i][ori]] == 3) break;
+                if (fArr[cf[i][ori]] === 0 || fArr[cf[i][ori]] === 3) break;
             }
             const col1 = fArr[cf[i][(ori + 1) % 3]];
             const col2 = fArr[cf[i][(ori + 2) % 3]];
             for (let j = 0; j < 8; ++j) {
-                if (col1 == ~~(cf[j][1] / 9) && col2 == ~~(cf[j][2] / 9)) {
+                if (col1 === ~~(cf[j][1] / 9) && col2 === ~~(cf[j][2] / 9)) {
                     this.ca[i] = j | ((ori % 3) << 3);
                     break;
                 }
@@ -117,11 +117,11 @@ class CubieCube {
         }
         for (let i = 0; i < 12; ++i) {
             for (let j = 0; j < 12; ++j) {
-                if (fArr[ef[i][0]] == ~~(ef[j][0] / 9) && fArr[ef[i][1]] == ~~(ef[j][1] / 9)) {
+                if (fArr[ef[i][0]] === ~~(ef[j][0] / 9) && fArr[ef[i][1]] === ~~(ef[j][1] / 9)) {
                     this.ea[i] = j << 1;
                     break;
                 }
-                if (fArr[ef[i][0]] == ~~(ef[j][1] / 9) && fArr[ef[i][1]] == ~~(ef[j][0] / 9)) {
+                if (fArr[ef[i][0]] === ~~(ef[j][1] / 9) && fArr[ef[i][1]] === ~~(ef[j][0] / 9)) {
                     this.ea[i] = j << 1 | 1;
                     break;
                 }

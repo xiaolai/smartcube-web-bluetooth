@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { Subject } from 'rxjs';
 import type { FixtureSession } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
 import { moyuMhcProtocol } from './moyu-mhc';

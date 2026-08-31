@@ -109,41 +109,41 @@ export interface MoyuV1CubeStatePayload {
     readonly angles: number[];
 }
 
-export function moyuV1ParseCubeStatePayload(t: DataView): MoyuV1CubeStatePayload {
+export function moyuV1ParseCubeStatePayload(payload: DataView): MoyuV1CubeStatePayload {
+    // 54 sticker ids packed two-per-byte (low nibble first), then 6 face angles the same way.
     const stickers: number[][] = [];
-    for (let s = 0; s < 6; s++) {
-        const r: number[] = [];
-        for (let a = 0; a < 9; a++) {
-            const o = t.getUint8(Math.floor((9 * s + a) / 2));
-            r.push((o >> ((9 * s + a) % 2 === 0 ? 0 : 4)) & 15);
+    for (let face = 0; face < 6; face++) {
+        const faceStickers: number[] = [];
+        for (let cell = 0; cell < 9; cell++) {
+            const packed = payload.getUint8(Math.floor((9 * face + cell) / 2));
+            faceStickers.push((packed >> ((9 * face + cell) % 2 === 0 ? 0 : 4)) & 15);
         }
-        stickers.push(r);
+        stickers.push(faceStickers);
     }
     const angles: number[] = [];
-    for (let s = 0; s < 6; s++) {
-        const row = 27 + Math.floor(s / 2);
-        const a = t.getUint8(row);
-        angles.push((a >> (s % 2 === 0 ? 0 : 4)) & 15);
+    for (let face = 0; face < 6; face++) {
+        const packed = payload.getUint8(27 + Math.floor(face / 2));
+        angles.push((packed >> (face % 2 === 0 ? 0 : 4)) & 15);
     }
     return { stickers, angles };
 }
 
 export function moyuV1EncodeCubeStatePayload(stickers: number[][], angles: number[]): Uint8Array {
-    const e = new Uint8Array(30);
-    const i = new DataView(e.buffer);
-    for (let s = 0; s < 6; s++) {
-        for (let r = 0; r < 9; r++) {
-            const lo = (9 * s + r) % 2 === 0;
-            const o = Math.floor((9 * s + r) / 2);
-            i.setUint8(o, i.getUint8(o) | ((15 & stickers[s]![r]!) << (lo ? 0 : 4)));
+    const out = new Uint8Array(30);
+    const view = new DataView(out.buffer);
+    for (let face = 0; face < 6; face++) {
+        for (let cell = 0; cell < 9; cell++) {
+            const lowNibble = (9 * face + cell) % 2 === 0;
+            const byteIndex = Math.floor((9 * face + cell) / 2);
+            view.setUint8(byteIndex, view.getUint8(byteIndex) | ((15 & stickers[face]![cell]!) << (lowNibble ? 0 : 4)));
         }
     }
-    for (let s = 0; s < 6; s++) {
-        const lo = s % 2 === 0;
-        const row = 27 + Math.floor(s / 2);
-        i.setUint8(row, i.getUint8(row) | ((15 & angles[s]!) << (lo ? 0 : 4)));
+    for (let face = 0; face < 6; face++) {
+        const lowNibble = face % 2 === 0;
+        const byteIndex = 27 + Math.floor(face / 2);
+        view.setUint8(byteIndex, view.getUint8(byteIndex) | ((15 & angles[face]!) << (lowNibble ? 0 : 4)));
     }
-    return e;
+    return out;
 }
 
 /** Build 54-char URFDLB facelet string for CubieCube.fromFacelet. */
@@ -285,28 +285,28 @@ export class MoyuV1Client {
         receivedAt: number;
         value: MoyuV1BatteryInfo;
     }> {
-        const r = await this.send(MOYU_V1_CMD_BATTERY);
-        const t = r.value;
+        const response = await this.send(MOYU_V1_CMD_BATTERY);
+        const data = response.value;
         return {
-            sentAt: r.sentAt,
-            receivedAt: r.receivedAt,
+            sentAt: response.sentAt,
+            receivedAt: response.receivedAt,
             value: {
-                charging: !!t.getUint8(0),
-                full: !!t.getUint8(1),
-                percentage: t.getUint16(2, true),
-                voltage: t.getInt32(4, true) / 1000,
+                charging: !!data.getUint8(0),
+                full: !!data.getUint8(1),
+                percentage: data.getUint16(2, true),
+                voltage: data.getInt32(4, true) / 1000,
             },
         };
     }
 
     async getHardwareInfo(): Promise<MoyuV1HardwareInfo> {
-        const r = await this.send(MOYU_V1_CMD_HW);
-        const t = r.value;
+        const response = await this.send(MOYU_V1_CMD_HW);
+        const data = response.value;
         return {
-            bootCount: t.getUint32(16, true),
-            major: t.getUint8(20),
-            minor: t.getUint8(21),
-            patch: t.getUint16(22, true),
+            bootCount: data.getUint32(16, true),
+            major: data.getUint8(20),
+            minor: data.getUint8(21),
+            patch: data.getUint16(22, true),
         };
     }
 

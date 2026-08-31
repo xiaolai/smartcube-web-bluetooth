@@ -26,11 +26,11 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
     private readonly aes: AesBlockCipher;
 
     constructor(key: Uint8Array, iv: Uint8Array, salt: Uint8Array) {
-        if (key.length != 16)
+        if (key.length !== 16)
             throw new Error("Key must be 16 bytes (128-bit) long");
-        if (iv.length != 16)
+        if (iv.length !== 16)
             throw new Error("Iv must be 16 bytes (128-bit) long");
-        if (salt.length != 6)
+        if (salt.length !== 6)
             throw new Error("Salt must be 6 bytes (48-bit) long");
         // Apply salt to key and iv
         this._key = new Uint8Array(key);
@@ -66,7 +66,7 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
     encrypt(data: Uint8Array): Uint8Array {
         if (data.length < 16)
             throw Error('Data must be at least 16 bytes long');
-        var res = new Uint8Array(data);
+        const res = new Uint8Array(data);
         // encrypt 16-byte chunk aligned to message start
         this.encryptChunk(res, 0);
         // encrypt 16-byte chunk aligned to message end
@@ -79,7 +79,7 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
     decrypt(data: Uint8Array): Uint8Array {
         if (data.length < 16)
             throw Error('Data must be at least 16 bytes long');
-        var res = new Uint8Array(data);
+        const res = new Uint8Array(data);
         // decrypt 16-byte chunk aligned to message end
         if (res.length > 16) {
             this.decryptChunk(res, res.length - 16);
