@@ -1,69 +1,12 @@
-import aesjs from 'aes-js';
 import { findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 import { parseMacBytes } from './mac-address';
+import { decryptQiYiBlocks, encryptQiYiMessage, qiyiHelloContent } from './qiyi-wire';
 import { isValidQiYiDecryptedPacket } from './packet-sanity';
-
-const { ModeOfOperation } = aesjs;
 
 const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
 const QIYI_SVC = '0000fff0' + UUID_SUFFIX;
 const QIYI_CHR = '0000fff6' + UUID_SUFFIX;
-const QIYI_KEY = [87, 177, 249, 171, 205, 90, 232, 167, 156, 185, 140, 231, 87, 140, 81, 8];
-
-function crc16modbus(data: number[]): number {
-    let crc = 0xffff;
-    for (let i = 0; i < data.length; i++) {
-        crc ^= data[i]!;
-        for (let j = 0; j < 8; j++) {
-            crc = (crc & 1) > 0 ? (crc >> 1) ^ 0xa001 : crc >> 1;
-        }
-    }
-    return crc;
-}
-
-/** Same wire as QiYiConnection.sendHello → sendMessage (wake cube for MAC validation). */
-function buildEncryptedQiYiHello(mac: string): ArrayBuffer {
-    const macBytes = parseMacBytes(mac);
-    const content = [0x00, 0x6b, 0x01, 0x00, 0x00, 0x22, 0x06, 0x00, 0x02, 0x08, 0x00];
-    for (let i = 5; i >= 0; i--) {
-        content.push(macBytes[i] ?? 0);
-    }
-    const msg: number[] = [0xfe];
-    msg.push(4 + content.length);
-    for (let k = 0; k < content.length; k++) {
-        msg.push(content[k]!);
-    }
-    const crc = crc16modbus(msg);
-    msg.push(crc & 0xff, crc >> 8);
-    const npad = (16 - (msg.length % 16)) % 16;
-    for (let p = 0; p < npad; p++) {
-        msg.push(0);
-    }
-    return encryptBlocks(new Uint8Array(msg));
-}
-
-function encryptBlocks(plain: Uint8Array): ArrayBuffer {
-    const cipher = new ModeOfOperation.ecb(new Uint8Array(QIYI_KEY));
-    const out = new Uint8Array(plain.length);
-    for (let i = 0; i < plain.length; i += 16) {
-        const block = cipher.encrypt(plain.subarray(i, i + 16));
-        out.set(block, i);
-    }
-    return out.buffer;
-}
-
-function decryptBlocks(enc: ArrayBuffer | ArrayBufferView): Uint8Array {
-    const view = enc instanceof ArrayBuffer ? new Uint8Array(enc) : new Uint8Array(enc.buffer, enc.byteOffset, enc.byteLength);
-    const cipher = new ModeOfOperation.ecb(new Uint8Array(QIYI_KEY));
-    const out = new Uint8Array(view.length);
-    for (let i = 0; i < view.length; i += 16) {
-        const block = cipher.decrypt(view.subarray(i, i + 16));
-        out.set(block, i);
-    }
-    return out;
-}
-
 /**
  * Returns true if notifications decrypt to plausible QiYi payloads for this MAC.
  */
@@ -73,6 +16,7 @@ export async function probeQiYiMac(
     options?: { timeoutMs?: number; signal?: AbortSignal }
 ): Promise<boolean> {
     const timeoutMs = options?.timeoutMs ?? 3000;
+    const helloFrame = encryptQiYiMessage(qiyiHelloContent(parseMacBytes(mac)));
     const gatt = device.gatt;
     if (!gatt) {
         return false;
@@ -100,7 +44,7 @@ export async function probeQiYiMac(
         }
         try {
             const raw = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-            const dec = decryptBlocks(raw);
+            const dec = decryptQiYiBlocks(raw);
             if (isValidQiYiDecryptedPacket(dec)) {
                 ok = true;
                 stopped = true;
@@ -118,7 +62,7 @@ export async function probeQiYiMac(
             return;
         }
         try {
-            void writeGattCharacteristicValue(chrct, buildEncryptedQiYiHello(mac)).catch(() => {});
+            void writeGattCharacteristicValue(chrct, helloFrame).catch(() => {});
         } catch {
             /* ignore */
         }

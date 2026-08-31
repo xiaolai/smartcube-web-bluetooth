@@ -1,11 +1,11 @@
 import { Subject } from 'rxjs';
-import aesjs from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
 import { throwIfAborted } from '../attachment/abort';
 import { parseMacBytes } from '../attachment/mac-address';
+import { crc16modbus, decryptQiYiBlocks, encryptQiYiMessage, qiyiHelloContent } from '../attachment/qiyi-wire';
 import { buildQiYiMacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeQiYiMac } from '../attachment/mac-probe-qiyi';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
@@ -17,56 +17,9 @@ const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
 const SERVICE_UUID = '0000fff0' + UUID_SUFFIX;
 const CHRCT_UUID_CUBE = '0000fff6' + UUID_SUFFIX;
 
-const { ModeOfOperation } = aesjs;
-
 const QIYI_CIC_LIST = [0x0504];
-const QIYI_KEY = [87, 177, 249, 171, 205, 90, 232, 167, 156, 185, 140, 231, 87, 140, 81, 8];
-
 /** Kociemba facelet string for solved cube */
 const QIYI_SOLVED_FACELETS = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
-
-function crc16modbus(data: number[]): number {
-    let crc = 0xFFFF;
-    for (let i = 0; i < data.length; i++) {
-        crc ^= data[i];
-        for (let j = 0; j < 8; j++) {
-            crc = (crc & 0x1) > 0 ? (crc >> 1) ^ 0xa001 : crc >> 1;
-        }
-    }
-    return crc;
-}
-
-class QiYiEncrypter {
-    private cipher: any;
-
-    constructor() {
-        this.cipher = new ModeOfOperation.ecb(new Uint8Array(QIYI_KEY));
-    }
-
-    encrypt(data: number[]): number[] {
-        const result: number[] = [];
-        for (let i = 0; i < data.length; i += 16) {
-            const block = data.slice(i, i + 16);
-            const encrypted = this.cipher.encrypt(new Uint8Array(block));
-            for (let j = 0; j < 16; j++) {
-                result[i + j] = encrypted[j];
-            }
-        }
-        return result;
-    }
-
-    decrypt(data: number[]): number[] {
-        const result: number[] = [];
-        for (let i = 0; i < data.length; i += 16) {
-            const block = data.slice(i, i + 16);
-            const decrypted = this.cipher.decrypt(new Uint8Array(block));
-            for (let j = 0; j < 16; j++) {
-                result[i + j] = decrypted[j];
-            }
-        }
-        return result;
-    }
-}
 
 function parseFacelet(faceMsg: number[]): string {
     const ret: string[] = [];
@@ -126,7 +79,6 @@ class QiYiConnection implements SmartCubeConnection {
 
     private device: BluetoothDevice;
     private cubeChrct: BluetoothRemoteGATTCharacteristic | null = null;
-    private encrypter: QiYiEncrypter;
     private curCubie = new CubieCube();
     private prevCubie = new CubieCube();
     private lastTs = 0;
@@ -139,38 +91,20 @@ class QiYiConnection implements SmartCubeConnection {
         this.deviceName = device.name || 'QiYi';
         this.deviceMAC = mac;
         this.events$ = new Subject<SmartCubeEvent>();
-        this.encrypter = new QiYiEncrypter();
     }
 
     private sendMessage(content: number[]): Promise<void> {
-        if (!this.cubeChrct) return Promise.reject();
+        if (!this.cubeChrct) return Promise.reject(new Error('[QiYi] Not connected'));
         const ch = this.cubeChrct;
         const run = async (): Promise<void> => {
-            const msg = [0xfe];
-            msg.push(4 + content.length);
-            for (let i = 0; i < content.length; i++) {
-                msg.push(content[i]!);
-            }
-            const crc = crc16modbus(msg);
-            msg.push(crc & 0xff, crc >> 8);
-            const npad = (16 - msg.length % 16) % 16;
-            for (let i = 0; i < npad; i++) {
-                msg.push(0);
-            }
-            const encMsg = this.encrypter.encrypt(msg);
-            await writeGattCharacteristicValue(ch, new Uint8Array(encMsg).buffer);
+            await writeGattCharacteristicValue(ch, encryptQiYiMessage(content));
         };
         this.writeChain = this.writeChain.then(run, run);
         return this.writeChain;
     }
 
     private sendHello(): Promise<void> {
-        const macBytes = parseMacBytes(this.deviceMAC);
-        const content = [0x00, 0x6b, 0x01, 0x00, 0x00, 0x22, 0x06, 0x00, 0x02, 0x08, 0x00];
-        for (let i = 5; i >= 0; i--) {
-            content.push(macBytes[i] || 0);
-        }
-        return this.sendMessage(content);
+        return this.sendMessage(qiyiHelloContent(parseMacBytes(this.deviceMAC)));
     }
 
     private onCubeEvent = (event: Event): void => {
@@ -178,12 +112,8 @@ class QiYiConnection implements SmartCubeConnection {
         // AES-ECB ciphertext is always whole 16-byte blocks; anything else is a truncated frame.
         if (!value || value.byteLength === 0 || value.byteLength % 16 !== 0) return;
 
-        const encMsg: number[] = [];
-        for (let i = 0; i < value.byteLength; i++) {
-            encMsg[i] = value.getUint8(i);
-        }
-
-        const msg = this.encrypter.decrypt(encMsg);
+        const raw = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+        const msg = Array.from(decryptQiYiBlocks(raw));
 
         if (msg[0] === 0xCC && msg[1] === 0x10) {
             this.handleQuaternionPacket(msg);
