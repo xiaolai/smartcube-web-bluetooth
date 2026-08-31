@@ -35,6 +35,29 @@ describe('moyu-v1 helpers', () => {
     expect(facelets[40]).toBe('L');
     expect(facelets[49]).toBe('B');
   });
+
+  it('maps the solved stickers to the exact solved facelet string (bijective cell map)', () => {
+    // Pins every cell of MOYU_CELL_TO_STD, not just the centers: a single transposed
+    // index (as shipped upstream: 26 in the R row, 29 in the F row) fails this.
+    expect(moyuStickersToFaceletString(MOYU_V1_SOLVED_STICKERS)).toBe(
+      'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB',
+    );
+  });
+
+  it('rejects malformed sticker shapes', () => {
+    expect(() => moyuStickersToFaceletString([[0, 1, 2]])).toThrow(/6 faces/);
+    expect(() => moyuV1EncodeCubeStatePayload([[0]], [0, 0, 0, 0, 0, 0])).toThrow(/6 faces/);
+    expect(() =>
+      moyuV1EncodeCubeStatePayload(
+        MOYU_V1_SOLVED_STICKERS.map((r) => [...r]),
+        [0, 0, 0],
+      ),
+    ).toThrow(/angles/);
+  });
+
+  it('rejects a cube-state payload shorter than 30 bytes', () => {
+    expect(() => moyuV1ParseCubeStatePayload(new DataView(new ArrayBuffer(10)))).toThrow(/too short/);
+  });
 });
 
 describe('MoyuV1Client.send', () => {
@@ -45,6 +68,46 @@ describe('MoyuV1Client.send', () => {
       const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
       await expect(client.send(3)).rejects.toBeInstanceOf(Error);
       expect((client as any).waiters).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects a body needing 16 frames (the 4-bit total field holds at most 15)', async () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    // 1 header byte + 18*15 payload bytes = 271 = 16 parts; 16 << 4 would truncate to 0.
+    await expect(client.send(3, new Uint8Array(18 * 15))).rejects.toThrow(/Too many parts/);
+  });
+
+  it('rejects out-of-range command codes before touching the wire', async () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    await expect(client.send(16)).rejects.toThrow(/out of range/);
+    await expect(client.send(-1)).rejects.toThrow(/out of range/);
+  });
+});
+
+describe('MoyuV1Client.dispose', () => {
+  it('rejects pending waiters and clears fragment state', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+      const rejections: Error[] = [];
+      const timeout = setTimeout(() => {}, 10_000);
+      (client as any).waiters.push({
+        command: 3,
+        id: 1,
+        sentAt: 0,
+        resolve: () => {},
+        reject: (e: Error) => rejections.push(e),
+        timeout,
+      });
+      (client as any).incomplete.push({ index: 0, total: 2, payload: new Uint8Array(1) });
+      client.dispose();
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0]!.message).toMatch(/disposed/);
+      expect((client as any).waiters).toHaveLength(0);
+      expect((client as any).incomplete).toHaveLength(0);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -94,6 +157,79 @@ describe('MoyuV1Client.onReadNotification', () => {
 
     clearTimeout(timeout);
     vi.useRealTimers();
+  });
+
+  it('does not let a malformed total=0 frame poison the next response', () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    const resolved: DataView[] = [];
+    const timeout = setTimeout(() => {}, 10_000);
+    (client as any).waiters.push({
+      command: 3,
+      id: 1,
+      sentAt: 0,
+      resolve: (v: { value: DataView }) => resolved.push(v.value),
+      reject: () => {},
+      timeout,
+    });
+
+    // Poison frame: total=0, index=0, one payload byte. Must be dropped, not retained.
+    client.onReadNotification(dvFromBytes([0x00, 0x00, 0x99]));
+    // Real single-part response: header 51 = command 3, success, id 1; payload [0xaa].
+    client.onReadNotification(dvFromBytes([0x00, (1 << 4) | 0, 51, 0xaa]));
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.byteLength).toBe(1);
+    expect(resolved[0]!.getUint8(0)).toBe(0xaa);
+    clearTimeout(timeout);
+  });
+
+  it('restarts assembly when a part with a different total arrives', () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    const resolved: DataView[] = [];
+    const timeout = setTimeout(() => {}, 10_000);
+    (client as any).waiters.push({
+      command: 3,
+      id: 1,
+      sentAt: 0,
+      resolve: (v: { value: DataView }) => resolved.push(v.value),
+      reject: () => {},
+      timeout,
+    });
+
+    // Stale first half of a two-part response that never completed…
+    client.onReadNotification(dvFromBytes([0x00, (2 << 4) | 0, 0x11, 0x22]));
+    // …followed by a complete single-part response.
+    client.onReadNotification(dvFromBytes([0x00, (1 << 4) | 0, 51, 0xbb]));
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.byteLength).toBe(1);
+    expect(resolved[0]!.getUint8(0)).toBe(0xbb);
+    clearTimeout(timeout);
+  });
+
+  it('drops a completed assembly with missing indices instead of merging a gap', () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    const resolved: DataView[] = [];
+    const timeout = setTimeout(() => {}, 10_000);
+    (client as any).waiters.push({
+      command: 3,
+      id: 1,
+      sentAt: 0,
+      resolve: (v: { value: DataView }) => resolved.push(v.value),
+      reject: () => {},
+      timeout,
+    });
+
+    // Final part of a 3-part response with parts 0 and 1 missing: must not dispatch.
+    client.onReadNotification(dvFromBytes([0x00, (3 << 4) | 2, 51, 0xcc]));
+    expect(resolved).toHaveLength(0);
+    clearTimeout(timeout);
+  });
+
+  it('ignores frames shorter than the two-byte header', () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    expect(() => client.onReadNotification(dvFromBytes([0x00]))).not.toThrow();
+    expect(() => client.onReadNotification(dvFromBytes([]))).not.toThrow();
   });
 });
 
