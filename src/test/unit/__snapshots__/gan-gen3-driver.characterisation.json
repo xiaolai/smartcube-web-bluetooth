@@ -1,0 +1,70 @@
+{
+  "log": {
+    "facelets serial 0": [
+      {
+        "type": "FACELETS",
+        "serial": 0,
+        "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+      }
+    ],
+    "move serial 1": [
+      {
+        "type": "MOVE",
+        "serial": 1,
+        "move": "U",
+        "face": 0,
+        "direction": 0,
+        "cubeTimestamp": 1000,
+        "hasLocalTimestamp": true
+      }
+    ],
+    "move serial 4 (gap -> history request)": [],
+    "history response from serial 3": [
+      {
+        "type": "MOVE",
+        "serial": 2,
+        "move": "U",
+        "face": 0,
+        "direction": 0,
+        "cubeTimestamp": null,
+        "hasLocalTimestamp": false
+      },
+      {
+        "type": "MOVE",
+        "serial": 3,
+        "move": "U",
+        "face": 0,
+        "direction": 0,
+        "cubeTimestamp": null,
+        "hasLocalTimestamp": false
+      },
+      {
+        "type": "MOVE",
+        "serial": 4,
+        "move": "U",
+        "face": 0,
+        "direction": 0,
+        "cubeTimestamp": 4000,
+        "hasLocalTimestamp": true
+      }
+    ],
+    "battery 85": [
+      {
+        "type": "BATTERY",
+        "batteryLevel": 85
+      }
+    ],
+    "hardware": [
+      {
+        "type": "HARDWARE",
+        "hardwareName": "iC2ab",
+        "softwareVersion": "1.5",
+        "hardwareVersion": "2.1",
+        "gyroSupported": false
+      }
+    ]
+  },
+  "writes": [
+    "68030300040000000000000000000000"
+  ]
+}

@@ -3,7 +3,7 @@ import { Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, moveDirectionFromNotation } from '../cubie-cube';
 import { now, findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
@@ -146,6 +146,11 @@ class GiikerConnection implements SmartCubeConnection {
             this.pendingValues.push(new DataView(b));
             return;
         }
+        this.handleStateValue(value);
+    };
+
+    /** Decode one state frame and emit the derived MOVE (if any) plus FACELETS. */
+    private handleStateValue(value: DataView): void {
         const timestamp = now();
         const { facelet, prevMoves } = parseState(value);
 
@@ -171,7 +176,7 @@ class GiikerConnection implements SmartCubeConnection {
             type: "FACELETS",
             facelets: facelet
         });
-    };
+    }
 
     private emitHardwareEvent(): void {
         this.events$.next({
@@ -273,29 +278,7 @@ class GiikerConnection implements SmartCubeConnection {
         const queued = this.pendingValues;
         this.pendingValues = [];
         for (const dv of queued) {
-            // Reuse the same logic path.
-            const ts2 = now();
-            const { facelet: f2, prevMoves: m2 } = parseState(dv);
-            if (this.lastFacelet && this.lastFacelet !== f2 && m2.length > 0) {
-                const moveStr = m2[0].trim();
-                const face = "URFDLB".indexOf(moveStr[0]);
-                const direction = moveDirectionFromNotation(moveStr);
-                this.events$.next({
-                    timestamp: ts2,
-                    type: "MOVE",
-                    face,
-                    direction,
-                    move: moveStr,
-                    localTimestamp: ts2,
-                    cubeTimestamp: null
-                });
-            }
-            this.lastFacelet = f2;
-            this.events$.next({
-                timestamp: ts2,
-                type: "FACELETS",
-                facelets: f2
-            });
+            this.handleStateValue(dv);
         }
     }
 
@@ -353,18 +336,17 @@ class GiikerConnection implements SmartCubeConnection {
     }
 }
 
+const GIIKER_NAME_FILTERS: SmartCubeNameFilter[] = [
+    { namePrefix: 'Gi' },
+    { namePrefix: 'Mi Smart Magic Cube' },
+    { namePrefix: 'Hi-' },
+];
+
 const giikerProtocol: SmartCubeProtocol = {
-    nameFilters: [
-        { namePrefix: "Gi" },
-        { namePrefix: "Mi Smart Magic Cube" },
-        { namePrefix: "Hi-" }
-    ],
+    nameFilters: GIIKER_NAME_FILTERS,
     optionalServices: [SERVICE_UUID_DATA, SERVICE_UUID_RW],
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('Gi') || name.startsWith('Mi Smart Magic Cube') || name.startsWith('Hi-');
-    },
+    matchesDevice: deviceNameMatchesFilters(GIIKER_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
         return serviceUuids.has(normalizeUuid(SERVICE_UUID_DATA)) ? 115 : 0;

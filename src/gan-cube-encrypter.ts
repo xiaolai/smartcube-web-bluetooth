@@ -80,27 +80,15 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
 
 }
 
-/**
- * Implementation for encryption scheme used in the GAN Gen3 cubes
- */
-class GanGen3CubeEncrypter extends GanGen2CubeEncrypter {
-    /** 101 its just the same */
-}
-
-/**
- * Implementation for encryption scheme used in the GAN Gen3 cubes
- */
-class GanGen4CubeEncrypter extends GanGen2CubeEncrypter {
-    /** amazing, it's still the same */
-}
-
 export type {
     GanCubeEncrypter
 };
 
+// Gen3 and gen4 use the same MAC-salted AES-128 scheme as gen2; the per-generation names are
+// kept for clarity at call sites and for backwards compatibility.
 export {
     GanGen2CubeEncrypter,
-    GanGen3CubeEncrypter,
-    GanGen4CubeEncrypter
+    GanGen2CubeEncrypter as GanGen3CubeEncrypter,
+    GanGen2CubeEncrypter as GanGen4CubeEncrypter
 };
 

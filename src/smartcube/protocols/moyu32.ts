@@ -1,15 +1,14 @@
 
 import { Subject } from 'rxjs';
-import aesjs from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { resolveCubeMac } from '../attachment/resolve-mac';
 import { throwIfAborted } from '../attachment/abort';
-import { parseMacBytes } from '../attachment/mac-address';
+import { createMoyu32SessionCrypto, type Moyu32SessionCrypto } from '../attachment/moyu32-session-crypto';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, SOLVED_FACELET, moveDirectionFromNotation } from '../cubie-cube';
 import { now, findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
@@ -22,11 +21,6 @@ const CHRT_UUID_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
 const ENABLE_GYRO_PAYLOAD = Object.freeze([
     172, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]) as readonly number[];
-
-const { ModeOfOperation } = aesjs;
-
-const BASE_KEY = [21, 119, 58, 92, 103, 14, 45, 31, 23, 103, 42, 19, 155, 103, 82, 87];
-const BASE_IV = [17, 35, 38, 37, 134, 42, 44, 59, 85, 6, 127, 49, 126, 103, 33, 87];
 
 /**
  * Parse 6 MAC octets from a manufacturer data DataView into canonical `aa:bb:…` form.
@@ -68,60 +62,6 @@ function parseMoyu32MacFromMf(mfData: BluetoothManufacturerData | DataView | nul
     return null;
 }
 
-class Moyu32Encrypter {
-    private key: number[];
-    private iv: number[];
-
-    constructor(macBytes: number[]) {
-        this.key = BASE_KEY.slice();
-        this.iv = BASE_IV.slice();
-        for (let i = 0; i < 6; i++) {
-            this.key[i] = (this.key[i] + macBytes[5 - i]) % 255;
-            this.iv[i] = (this.iv[i] + macBytes[5 - i]) % 255;
-        }
-    }
-
-    decrypt(data: number[]): number[] {
-        const ret = data.slice();
-        const cipher = new ModeOfOperation.ecb(new Uint8Array(this.key));
-        if (ret.length > 16) {
-            const offset = ret.length - 16;
-            const block = cipher.decrypt(new Uint8Array(ret.slice(offset)));
-            for (let i = 0; i < 16; i++) {
-                ret[i + offset] = block[i] ^ (~~this.iv[i]);
-            }
-        }
-        const block = cipher.decrypt(new Uint8Array(ret.slice(0, 16)));
-        for (let i = 0; i < 16; i++) {
-            ret[i] = block[i] ^ (~~this.iv[i]);
-        }
-        return ret;
-    }
-
-    encrypt(data: number[]): number[] {
-        const ret = data.slice();
-        const cipher = new ModeOfOperation.ecb(new Uint8Array(this.key));
-        for (let i = 0; i < 16; i++) {
-            ret[i] ^= ~~this.iv[i];
-        }
-        const block = cipher.encrypt(new Uint8Array(ret.slice(0, 16)));
-        for (let i = 0; i < 16; i++) {
-            ret[i] = block[i];
-        }
-        if (ret.length > 16) {
-            const offset = ret.length - 16;
-            for (let i = 0; i < 16; i++) {
-                ret[i + offset] ^= ~~this.iv[i];
-            }
-            const block2 = cipher.encrypt(new Uint8Array(ret.slice(offset, offset + 16)));
-            for (let i = 0; i < 16; i++) {
-                ret[i + offset] = block2[i];
-            }
-        }
-        return ret;
-    }
-}
-
 function parseFacelet(faceletBits: string): string {
     const state: string[] = [];
     const faces = [2, 5, 0, 3, 4, 1]; // parse in order URFDLB instead of FBUDLR
@@ -155,7 +95,7 @@ class Moyu32Connection implements SmartCubeConnection {
     private device: BluetoothDevice;
     private readChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private writeChrct: BluetoothRemoteGATTCharacteristic | null = null;
-    private encrypter: Moyu32Encrypter | null = null;
+    private encrypter: Moyu32SessionCrypto | null = null;
     private prevCubie = new CubieCube();
     private curCubie = new CubieCube();
     private latestFacelet = SOLVED_FACELET;
@@ -378,19 +318,14 @@ class Moyu32Connection implements SmartCubeConnection {
         this.writeChrct = findCharacteristic(chrcts, CHRT_UUID_WRITE);
 
         if (!this.readChrct || !this.writeChrct) {
-            throw new Error(
-                !this.readChrct
-                    ? '[Moyu32] Cannot find required characteristics'
-                    : '[Moyu32] Cannot find write characteristic'
-            );
+            throw new Error('[Moyu32] Cannot find read/write characteristics');
         }
 
         this.readChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
         await this.readChrct.startNotifications();
 
-        // Initialize encryption with MAC
-        const macBytes = parseMacBytes(this.deviceMAC);
-        this.encrypter = new Moyu32Encrypter(macBytes);
+        // Initialize encryption with MAC (shared with the MAC probe, so both always agree)
+        this.encrypter = createMoyu32SessionCrypto(this.deviceMAC);
 
         await this.sendSimpleRequest(161); // Request cube info
         await this.sendSimpleRequest(163); // Request cube status (facelets)
@@ -450,55 +385,14 @@ async function connectMoyu32Device(
     context?: AttachmentContext
 ): Promise<SmartCubeConnection> {
     throwIfAborted(context?.signal);
-    let mac = parseMoyu32MacFromMf(context?.advertisementManufacturerData ?? null);
-    mac = mac || getCachedMacForDevice(device);
-    if (!mac && macProvider) {
-        const r = await macProvider(device, false);
-        if (r) {
-            mac = r;
-        }
-    }
+    const mac = await resolveCubeMac(device, macProvider, context, {
+        parseFromManufacturerData: parseMoyu32MacFromMf,
+        advertisementTimeoutsMs: [5000, 8000],
+        candidatesFromName: buildMoyu32MacCandidatesFromName,
+        probe: probeMoyu32Mac,
+        probeTimeoutMs: 2000,
+    });
 
-    if (!mac) {
-        // The first advertisement frequently carries no manufacturer data; merge frames until one does.
-        const mfData = await waitForManufacturerData(device, context?.enableAddressSearch ? 8000 : 5000, {
-            earlyExitOnEmptyFirstAdvertisement: false,
-        });
-        mac = parseMoyu32MacFromMf(mfData);
-    }
-
-    if (!mac && context?.enableAddressSearch) {
-        const candidates = buildMoyu32MacCandidatesFromName(device.name);
-        const timeoutMs = 2000;
-        for (let i = 0; i < candidates.length; i++) {
-            if (context.signal?.aborted) {
-                break;
-            }
-            context.onStatus?.(`Testing address (${i + 1}/${candidates.length})…`);
-            try {
-                if (
-                    await probeMoyu32Mac(device, candidates[i]!, {
-                        timeoutMs,
-                        signal: context.signal,
-                    })
-                ) {
-                    mac = candidates[i]!;
-                    break;
-                }
-            } catch {
-                /* try next */
-            }
-        }
-    }
-
-    if (!mac && macProvider) {
-        const r = await macProvider(device, true);
-        if (r) {
-            mac = r;
-        }
-    }
-
-    throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine MoYu32 cube MAC address');
     }
@@ -508,15 +402,14 @@ async function connectMoyu32Device(
     return conn;
 }
 
+const MOYU32_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: '^S' }, { namePrefix: 'WCU_' }, { namePrefix: 'WCU_MY3' }];
+
 const moyu32Protocol: SmartCubeProtocol = {
-    nameFilters: [{ namePrefix: '^S' }, { namePrefix: 'WCU_' }, { namePrefix: 'WCU_MY3' }],
+    nameFilters: MOYU32_NAME_FILTERS,
     optionalServices: [SERVICE_UUID],
     needsMac: true,
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('^S') || name.startsWith('WCU_') || name.startsWith('WCU_MY3');
-    },
+    matchesDevice: deviceNameMatchesFilters(MOYU32_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
         return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;

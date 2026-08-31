@@ -1,20 +1,14 @@
 
 import { now } from '../utils';
-
-function toUuid128(uuid: string): string {
-    if (/^[0-9A-Fa-f]{4}$/.exec(uuid)) {
-        uuid = "0000" + uuid + "-0000-1000-8000-00805F9B34FB";
-    }
-    return uuid.toUpperCase();
-}
+import { normalizeUuid } from './attachment/normalize-uuid';
 
 function findCharacteristic(
     characteristics: BluetoothRemoteGATTCharacteristic[],
     uuid: string
 ): BluetoothRemoteGATTCharacteristic | null {
-    const targetUuid = toUuid128(uuid);
+    const targetUuid = normalizeUuid(uuid);
     for (const chrct of characteristics) {
-        if (toUuid128(chrct.uuid) === targetUuid) {
+        if (normalizeUuid(chrct.uuid) === targetUuid) {
             return chrct;
         }
     }

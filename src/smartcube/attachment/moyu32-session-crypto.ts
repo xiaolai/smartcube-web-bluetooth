@@ -6,11 +6,13 @@ const { ModeOfOperation } = aesjs;
 const BASE_KEY = [21, 119, 58, 92, 103, 14, 45, 31, 23, 103, 42, 19, 155, 103, 82, 87];
 const BASE_IV = [17, 35, 38, 37, 134, 42, 44, 59, 85, 6, 127, 49, 126, 103, 33, 87];
 
-/** MoYu32 AES session crypto keyed by device address (same derivation as protocol driver). */
-export function createMoyu32SessionCrypto(mac: string): {
+export interface Moyu32SessionCrypto {
     decrypt(raw: number[]): number[];
     encrypt(data: number[]): number[];
-} {
+}
+
+/** MoYu32 AES session crypto keyed by device address; the protocol driver and the MAC probe share it. */
+export function createMoyu32SessionCrypto(mac: string): Moyu32SessionCrypto {
     const t = parseMacBytes(mac);
     const key = BASE_KEY.slice();
     const iv = BASE_IV.slice();

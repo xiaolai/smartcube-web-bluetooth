@@ -42,6 +42,14 @@ function getRegisteredProtocols(): SmartCubeProtocol[] {
     return protocolRegistry;
 }
 
+/** Standard matchesDevice: the advertised name satisfies one of the protocol's name filters. */
+function deviceNameMatchesFilters(nameFilters: SmartCubeNameFilter[]): (device: BluetoothDevice) => boolean {
+    return (device) => {
+        const name = device.name || '';
+        return nameFilters.some((f) => ('name' in f ? name === f.name : name.startsWith(f.namePrefix)));
+    };
+}
+
 export type { SmartCubeProtocol };
-export { registerProtocol, getRegisteredProtocols };
+export { registerProtocol, getRegisteredProtocols, deviceNameMatchesFilters };
 export type { AttachmentContext, ConnectSmartCubeOptions, DeviceSelectionMode } from './attachment/types';
