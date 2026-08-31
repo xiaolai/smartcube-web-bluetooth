@@ -37,6 +37,21 @@ describe('moyu-v1 helpers', () => {
   });
 });
 
+describe('MoyuV1Client.send', () => {
+  it('rejects immediately and leaves no waiter or timer when the GATT write fails', async () => {
+    vi.useFakeTimers();
+    try {
+      // No `.service` on the characteristic: the write path throws before anything is sent.
+      const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+      await expect(client.send(3)).rejects.toBeInstanceOf(Error);
+      expect((client as any).waiters).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('MoyuV1Client.onReadNotification', () => {
   it('resolves a matching waiter when the final part arrives', async () => {
     vi.useFakeTimers();

@@ -3,12 +3,13 @@ import { ModeOfOperation } from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { getCachedMacForDevice } from '../attachment/address-hints';
+import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { parseMacBytes } from '../attachment/mac-address';
 import { buildQiYiMacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeQiYiMac } from '../attachment/mac-probe-qiyi';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
 import { CubieCube } from '../cubie-cube';
-import { now, findCharacteristic, waitForAdvertisements, extractMacFromManufacturerData } from '../ble-utils';
+import { now, findCharacteristic, extractMacFromManufacturerData } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 
 const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
@@ -161,7 +162,7 @@ class QiYiConnection implements SmartCubeConnection {
     }
 
     private sendHello(): Promise<void> {
-        const macBytes = this.deviceMAC.split(/[:-\s]+/).map(c => parseInt(c, 16));
+        const macBytes = parseMacBytes(this.deviceMAC);
         const content = [0x00, 0x6b, 0x01, 0x00, 0x00, 0x22, 0x06, 0x00, 0x02, 0x08, 0x00];
         for (let i = 5; i >= 0; i--) {
             content.push(macBytes[i] || 0);
@@ -414,7 +415,10 @@ async function connectQiYiDevice(
     }
 
     if (!mac) {
-        const mfData = await waitForAdvertisements(device, context?.enableAddressSearch ? 8000 : 5000);
+        // The first advertisement frequently carries no manufacturer data; merge frames until one does.
+        const mfData = await waitForManufacturerData(device, context?.enableAddressSearch ? 8000 : 5000, {
+            earlyExitOnEmptyFirstAdvertisement: false,
+        });
         mac = parseQiYiMacFromMf(mfData);
     }
 

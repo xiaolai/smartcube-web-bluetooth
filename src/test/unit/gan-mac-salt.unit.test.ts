@@ -18,16 +18,15 @@ describe('macStringToSaltOrThrow', () => {
   });
 
   it('throws when segment count is not 6', () => {
-    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee')).toThrow(/requires a valid 6-byte/i);
-    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee:ff:00')).toThrow(/requires a valid 6-byte/i);
+    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee')).toThrow(/Invalid MAC address/);
+    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee:ff:00')).toThrow(/Invalid MAC address/);
   });
 
   it('throws when any segment is not valid hex', () => {
-    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee:gg')).toThrow(/Invalid MAC address segment/);
+    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee:gg')).toThrow(/Invalid MAC address/);
   });
 
   it('throws when any segment is outside 00..FF', () => {
-    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee:100')).toThrow(/Invalid MAC address segment/);
+    expect(() => macStringToSaltOrThrow('aa:bb:cc:dd:ee:100')).toThrow(/Invalid MAC address/);
   });
 });
-
