@@ -22,6 +22,15 @@ const QIYI_CIC_LIST = [0x0504];
 /** Kociemba facelet string for solved cube */
 const QIYI_SOLVED_FACELETS = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
 
+/** QiYi frame opcodes. */
+const OP_STATE_HELLO = 0x2;
+const OP_STATE_CHANGE = 0x3;
+const OP_SYNC_CONFIRM = 0x4;
+/** Quaternion packets use their own header instead of the 0xFE frame. */
+const QUATERNION_HEADER = 0xcc;
+/** Device timestamps tick at 1.6 units per millisecond. */
+const QIYI_TICKS_PER_MS = 1.6;
+
 function parseFacelet(faceMsg: number[]): string {
     const ret: string[] = [];
     for (let i = 0; i < 54; i++) {
@@ -123,7 +132,7 @@ class QiYiConnection implements SmartCubeConnection {
         const raw = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
         const msg = Array.from(decryptQiYiBlocks(raw));
 
-        if (msg[0] === 0xCC && msg[1] === 0x10) {
+        if (msg[0] === QUATERNION_HEADER && msg[1] === 0x10) {
             this.handleQuaternionPacket(msg);
             return;
         }
@@ -181,7 +190,7 @@ class QiYiConnection implements SmartCubeConnection {
         const opcode = msg[2]!;
         const ts = readQiYiTimestampBE(msg, 3);
 
-        if (opcode === 0x2) {
+        if (opcode === OP_STATE_HELLO) {
             // Hello response — always ACK
             this.sendMessage(msg.slice(2, 7)).catch(() => {});
             const newFacelet = parseFacelet(msg.slice(7, 34));
@@ -200,7 +209,7 @@ class QiYiConnection implements SmartCubeConnection {
             return;
         }
 
-        if (opcode === 0x3) {
+        if (opcode === OP_STATE_CHANGE) {
             const needsAck = msg.length > 91 && msg[91] !== 0;
             if (needsAck) {
                 this.sendMessage(msg.slice(2, 7)).catch(() => {});
@@ -228,7 +237,7 @@ class QiYiConnection implements SmartCubeConnection {
                     direction: power === 0 ? 0 : 1,
                     move: moveStr,
                     localTimestamp: k === newMoves.length - 1 ? timestamp : null,
-                    cubeTimestamp: Math.trunc(moveTs / 1.6)
+                    cubeTimestamp: Math.trunc(moveTs / QIYI_TICKS_PER_MS)
                 });
 
                 this.bus.emit({
@@ -250,7 +259,7 @@ class QiYiConnection implements SmartCubeConnection {
             return;
         }
 
-        if (opcode === 0x4) {
+        if (opcode === OP_SYNC_CONFIRM) {
             // Sync confirmation: emit solved state; no ACK for op 4 in reference protocol.
             if (msg[1] !== 38) return;
             this.bus.emit({

@@ -23,6 +23,13 @@ const ENABLE_GYRO_PAYLOAD = Object.freeze([
     172, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]) as readonly number[];
 
+/** MoYu32 wire opcodes (requests and their notification responses share the value). */
+const OP_HARDWARE_INFO = 161;
+const OP_FACELETS = 163;
+const OP_BATTERY = 164;
+const OP_MOVE = 165;
+const OP_GYRO = 171;
+
 /**
  * Parse 6 MAC octets from a manufacturer data DataView into canonical `aa:bb:…` form.
  * When length >= 8, the first two bytes are treated as company ID and skipped; the next six
@@ -141,7 +148,7 @@ class Moyu32Connection implements SmartCubeConnection {
     };
 
     private pollBattery = (): void => {
-        void this.sendSimpleRequest(164);
+        void this.sendSimpleRequest(OP_BATTERY);
     };
 
     private parseData(value: DataView): void {
@@ -152,7 +159,7 @@ class Moyu32Connection implements SmartCubeConnection {
         }
         const decoded = this.encrypter ? this.encrypter.decrypt(raw) : raw;
 
-        if ((decoded[0] | 0) === 171) {
+        if ((decoded[0] | 0) === OP_GYRO) {
             if (!this.capabilities.gyroscope) {
                 this.bus.setCapabilities({ gyroscope: true });
             }
@@ -163,7 +170,7 @@ class Moyu32Connection implements SmartCubeConnection {
         const bits = decoded.map(b => ((b + 256) & 0xFF).toString(2).padStart(8, '0')).join('');
         const msgType = parseInt(bits.slice(0, 8), 2);
 
-        if (msgType === 161) { // Hardware info
+        if (msgType === OP_HARDWARE_INFO) { // Hardware info
             let devName = '';
             for (let i = 0; i < 8; i++) {
                 devName += String.fromCharCode(parseInt(bits.slice(8 + i * 8, 16 + i * 8), 2));
@@ -179,7 +186,7 @@ class Moyu32Connection implements SmartCubeConnection {
                 hardwareVersion,
                 gyroSupported: this.capabilities.gyroscope
             });
-        } else if (msgType === 163) { // Facelets state
+        } else if (msgType === OP_FACELETS) { // Facelets state
             const seq = parseInt(bits.slice(152, 160), 2);
             const facelet = parseFacelet(bits.slice(8, 152));
             if (this.prevCubie.fromFacelet(facelet) === -1) {
@@ -194,9 +201,9 @@ class Moyu32Connection implements SmartCubeConnection {
                 type: "FACELETS",
                 facelets: this.latestFacelet
             });
-        } else if (msgType === 164) { // Battery
+        } else if (msgType === OP_BATTERY) { // Battery
             this.bus.emitBattery(parseInt(bits.slice(8, 16), 2), timestamp);
-        } else if (msgType === 165) { // Move
+        } else if (msgType === OP_MOVE) { // Move
             this.moveCnt = parseInt(bits.slice(88, 96), 2);
             if (this.moveCnt === this.prevMoveCnt || this.prevMoveCnt === -1) return;
 
@@ -316,32 +323,32 @@ class Moyu32Connection implements SmartCubeConnection {
         // Initialize encryption with MAC (shared with the MAC probe, so both always agree)
         this.encrypter = createMoyu32SessionCrypto(this.deviceMAC);
 
-        await this.sendSimpleRequest(161); // Request cube info
-        await this.sendSimpleRequest(163); // Request cube status (facelets)
-        await this.sendSimpleRequest(164); // Request battery level
+        await this.sendSimpleRequest(OP_HARDWARE_INFO); // Request cube info
+        await this.sendSimpleRequest(OP_FACELETS); // Request cube status (facelets)
+        await this.sendSimpleRequest(OP_BATTERY); // Request battery level
 
         // Some MoYu32 variants require an extra request burst before
         // gyro enable + steady-state status updates begin.
-        await this.sendSimpleRequest(161);
-        await this.sendSimpleRequest(163);
-        await this.sendSimpleRequest(164);
+        await this.sendSimpleRequest(OP_HARDWARE_INFO);
+        await this.sendSimpleRequest(OP_FACELETS);
+        await this.sendSimpleRequest(OP_BATTERY);
 
         this.batteryInterval = setInterval(this.pollBattery, 60_000);
         await this.sendRequest(Array.from(ENABLE_GYRO_PAYLOAD));
-        await this.sendSimpleRequest(163); // Refresh cube status after enabling gyro notifications
+        await this.sendSimpleRequest(OP_FACELETS); // Refresh cube status after enabling gyro notifications
     }
 
     async sendCommand(command: SmartCubeCommand): Promise<void> {
         switch (command.type) {
             case "REQUEST_HARDWARE":
-                await this.sendSimpleRequest(161);
+                await this.sendSimpleRequest(OP_HARDWARE_INFO);
                 break;
             case "REQUEST_FACELETS":
-                await this.sendSimpleRequest(163);
+                await this.sendSimpleRequest(OP_FACELETS);
                 break;
             case "REQUEST_BATTERY":
                 this.bus.forceNextBattery();
-                await this.sendSimpleRequest(164);
+                await this.sendSimpleRequest(OP_BATTERY);
                 break;
         }
     }
