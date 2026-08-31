@@ -44,7 +44,7 @@
       "i": 2,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 0,
       "hasLocalTimestamp": true
@@ -86,7 +86,7 @@
       "i": 8,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 311,
       "hasLocalTimestamp": true
@@ -100,7 +100,7 @@
       "i": 10,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 433,
       "hasLocalTimestamp": true
@@ -114,7 +114,7 @@
       "i": 12,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 574,
       "hasLocalTimestamp": true
@@ -170,7 +170,7 @@
       "i": 20,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 972,
       "hasLocalTimestamp": true
@@ -184,7 +184,7 @@
       "i": 22,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 1109,
       "hasLocalTimestamp": true
@@ -198,7 +198,7 @@
       "i": 24,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 1276,
       "hasLocalTimestamp": true
@@ -240,7 +240,7 @@
       "i": 30,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 1678,
       "hasLocalTimestamp": true
@@ -254,7 +254,7 @@
       "i": 32,
       "type": "MOVE",
       "face": 2,
-      "direction": 2,
+      "direction": 1,
       "move": "F'",
       "cubeTimestampRel": 1791,
       "hasLocalTimestamp": true
@@ -296,7 +296,7 @@
       "i": 38,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 2344,
       "hasLocalTimestamp": true
@@ -310,7 +310,7 @@
       "i": 40,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 2442,
       "hasLocalTimestamp": true
@@ -324,7 +324,7 @@
       "i": 42,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 2578,
       "hasLocalTimestamp": true
@@ -380,7 +380,7 @@
       "i": 50,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 2952,
       "hasLocalTimestamp": true
@@ -394,7 +394,7 @@
       "i": 52,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 3088,
       "hasLocalTimestamp": true
@@ -408,7 +408,7 @@
       "i": 54,
       "type": "MOVE",
       "face": 0,
-      "direction": 2,
+      "direction": 1,
       "move": "U'",
       "cubeTimestampRel": 3334,
       "hasLocalTimestamp": true
@@ -450,7 +450,7 @@
       "i": 60,
       "type": "MOVE",
       "face": 1,
-      "direction": 2,
+      "direction": 1,
       "move": "R'",
       "cubeTimestampRel": 3764,
       "hasLocalTimestamp": true
@@ -464,7 +464,7 @@
       "i": 62,
       "type": "MOVE",
       "face": 2,
-      "direction": 2,
+      "direction": 1,
       "move": "F'",
       "cubeTimestampRel": 3915,
       "hasLocalTimestamp": true
