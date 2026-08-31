@@ -187,6 +187,56 @@ interface GanProtocolDriver {
 /** Calculate sum of all numbers in array */
 const sum: (arr: Array<number>) => number = arr => arr.reduce((a, v) => a + v, 0);
 
+/**
+ * Decode 7 corners + 11 edges at the given bit offsets and reconstruct the 8th corner /
+ * 12th edge from the permutation-sum and orientation-parity invariants.
+ */
+function decodeCornersEdges(msg: GanBitReader, offsets: { cp: number; co: number; ep: number; eo: number }): GanCubeState {
+    let cp: Array<number> = [];
+    let co: Array<number> = [];
+    let ep: Array<number> = [];
+    let eo: Array<number> = [];
+    for (let i = 0; i < 7; i++) {
+        cp.push(msg.getBitWord(offsets.cp + i * 3, 3));
+        co.push(msg.getBitWord(offsets.co + i * 2, 2));
+    }
+    cp.push(28 - sum(cp));
+    co.push((3 - (sum(co) % 3)) % 3);
+    for (let i = 0; i < 11; i++) {
+        ep.push(msg.getBitWord(offsets.ep + i * 4, 4));
+        eo.push(msg.getBitWord(offsets.eo + i, 1));
+    }
+    ep.push(66 - sum(ep));
+    eo.push((2 - (sum(eo) % 2)) % 2);
+    return { CP: cp, CO: co, EP: ep, EO: eo };
+}
+
+/** Quaternion (4 x 16-bit sign-magnitude) plus angular velocity (3 x 4-bit sign-magnitude). */
+function decodeGyroEvent(msg: GanBitReader, timestamp: number, quaternionOffset: number, velocityOffset: number): GanCubeEvent {
+    let qw = msg.getBitWord(quaternionOffset, 16);
+    let qx = msg.getBitWord(quaternionOffset + 16, 16);
+    let qy = msg.getBitWord(quaternionOffset + 32, 16);
+    let qz = msg.getBitWord(quaternionOffset + 48, 16);
+    let vx = msg.getBitWord(velocityOffset, 4);
+    let vy = msg.getBitWord(velocityOffset + 4, 4);
+    let vz = msg.getBitWord(velocityOffset + 8, 4);
+    return {
+        type: "GYRO",
+        timestamp: timestamp,
+        quaternion: {
+            x: (1 - (qx >> 15) * 2) * (qx & 0x7FFF) / 0x7FFF,
+            y: (1 - (qy >> 15) * 2) * (qy & 0x7FFF) / 0x7FFF,
+            z: (1 - (qz >> 15) * 2) * (qz & 0x7FFF) / 0x7FFF,
+            w: (1 - (qw >> 15) * 2) * (qw & 0x7FFF) / 0x7FFF
+        },
+        velocity: {
+            x: (1 - (vx >> 3) * 2) * (vx & 0x7),
+            y: (1 - (vy >> 3) * 2) * (vy & 0x7),
+            z: (1 - (vz >> 3) * 2) * (vz & 0x7)
+        }
+    };
+}
+
 /** Optional hooks for {@link GanCubeClassicConnection.create}. */
 export type GanClassicConnectionOptions = {
     /** If set, decrypted payloads that fail this check are dropped (wrong MAC / noise). */
@@ -369,32 +419,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
 
         if (eventType == 0x01) { // GYRO
 
-            // Orientation Quaternion
-            let qw = msg.getBitWord(4, 16);
-            let qx = msg.getBitWord(20, 16);
-            let qy = msg.getBitWord(36, 16);
-            let qz = msg.getBitWord(52, 16);
-
-            // Angular Velocity
-            let vx = msg.getBitWord(68, 4);
-            let vy = msg.getBitWord(72, 4);
-            let vz = msg.getBitWord(76, 4);
-
-            cubeEvents.push({
-                type: "GYRO",
-                timestamp: timestamp,
-                quaternion: {
-                    x: (1 - (qx >> 15) * 2) * (qx & 0x7FFF) / 0x7FFF,
-                    y: (1 - (qy >> 15) * 2) * (qy & 0x7FFF) / 0x7FFF,
-                    z: (1 - (qz >> 15) * 2) * (qz & 0x7FFF) / 0x7FFF,
-                    w: (1 - (qw >> 15) * 2) * (qw & 0x7FFF) / 0x7FFF
-                },
-                velocity: {
-                    x: (1 - (vx >> 3) * 2) * (vx & 0x7),
-                    y: (1 - (vy >> 3) * 2) * (vy & 0x7),
-                    z: (1 - (vz >> 3) * 2) * (vz & 0x7)
-                }
-            });
+            cubeEvents.push(decodeGyroEvent(msg, timestamp, 4, 68));
 
         } else if (eventType == 0x02) { // MOVE
 
@@ -436,39 +461,14 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
             if (this.lastSerial == -1)
                 this.lastSerial = serial;
 
-            // Corner/Edge Permutation/Orientation
-            let cp: Array<number> = [];
-            let co: Array<number> = [];
-            let ep: Array<number> = [];
-            let eo: Array<number> = [];
-
-            // Corners
-            for (let i = 0; i < 7; i++) {
-                cp.push(msg.getBitWord(12 + i * 3, 3));
-                co.push(msg.getBitWord(33 + i * 2, 2));
-            }
-            cp.push(28 - sum(cp));
-            co.push((3 - (sum(co) % 3)) % 3);
-
-            // Edges
-            for (let i = 0; i < 11; i++) {
-                ep.push(msg.getBitWord(47 + i * 4, 4));
-                eo.push(msg.getBitWord(91 + i, 1));
-            }
-            ep.push(66 - sum(ep));
-            eo.push((2 - (sum(eo) % 2)) % 2);
+            const state = decodeCornersEdges(msg, { cp: 12, co: 33, ep: 47, eo: 91 });
 
             cubeEvents.push({
                 type: "FACELETS",
                 serial: serial,
                 timestamp: timestamp,
-                facelets: toKociembaFacelets(cp, co, ep, eo),
-                state: {
-                    CP: cp,
-                    CO: co,
-                    EP: ep,
-                    EO: eo
-                },
+                facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
+                state: state,
             });
 
         } else if (eventType == 0x05) { // HARDWARE
@@ -722,39 +722,14 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                 if (this.lastSerial == -1)
                     this.lastSerial = serial;
 
-                // Corner/Edge Permutation/Orientation
-                let cp: Array<number> = [];
-                let co: Array<number> = [];
-                let ep: Array<number> = [];
-                let eo: Array<number> = [];
-
-                // Corners
-                for (let i = 0; i < 7; i++) {
-                    cp.push(msg.getBitWord(40 + i * 3, 3));
-                    co.push(msg.getBitWord(61 + i * 2, 2));
-                }
-                cp.push(28 - sum(cp));
-                co.push((3 - (sum(co) % 3)) % 3);
-
-                // Edges
-                for (let i = 0; i < 11; i++) {
-                    ep.push(msg.getBitWord(77 + i * 4, 4));
-                    eo.push(msg.getBitWord(121 + i, 1));
-                }
-                ep.push(66 - sum(ep));
-                eo.push((2 - (sum(eo) % 2)) % 2);
+                const state = decodeCornersEdges(msg, { cp: 40, co: 61, ep: 77, eo: 121 });
 
                 cubeEvents.push({
                     type: "FACELETS",
                     serial: serial,
                     timestamp: timestamp,
-                    facelets: toKociembaFacelets(cp, co, ep, eo),
-                    state: {
-                        CP: cp,
-                        CO: co,
-                        EP: ep,
-                        EO: eo
-                    },
+                    facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
+                    state: state,
                 });
 
             } else if (eventType == 0x07) { // HARDWARE
@@ -1039,39 +1014,14 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
             if (this.lastSerial == -1)
                 this.lastSerial = serial;
 
-            // Corner/Edge Permutation/Orientation
-            let cp: Array<number> = [];
-            let co: Array<number> = [];
-            let ep: Array<number> = [];
-            let eo: Array<number> = [];
-
-            // Corners
-            for (let i = 0; i < 7; i++) {
-                cp.push(msg.getBitWord(32 + i * 3, 3));
-                co.push(msg.getBitWord(53 + i * 2, 2));
-            }
-            cp.push(28 - sum(cp));
-            co.push((3 - (sum(co) % 3)) % 3);
-
-            // Edges
-            for (let i = 0; i < 11; i++) {
-                ep.push(msg.getBitWord(69 + i * 4, 4));
-                eo.push(msg.getBitWord(113 + i, 1));
-            }
-            ep.push(66 - sum(ep));
-            eo.push((2 - (sum(eo) % 2)) % 2);
+            const state = decodeCornersEdges(msg, { cp: 32, co: 53, ep: 69, eo: 113 });
 
             cubeEvents.push({
                 type: "FACELETS",
                 serial: serial,
                 timestamp: timestamp,
-                facelets: toKociembaFacelets(cp, co, ep, eo),
-                state: {
-                    CP: cp,
-                    CO: co,
-                    EP: ep,
-                    EO: eo
-                },
+                facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
+                state: state,
             });
 
         } else if (eventType >= 0xFA && eventType <= 0xFE) { // HARDWARE
@@ -1111,32 +1061,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
             const firstGyroThisSession = !this.gyroObserved;
             this.gyroObserved = true;
 
-            // Orientation Quaternion
-            let qw = msg.getBitWord(16, 16);
-            let qx = msg.getBitWord(32, 16);
-            let qy = msg.getBitWord(48, 16);
-            let qz = msg.getBitWord(64, 16);
-
-            // Angular Velocity
-            let vx = msg.getBitWord(80, 4);
-            let vy = msg.getBitWord(84, 4);
-            let vz = msg.getBitWord(88, 4);
-
-            cubeEvents.push({
-                type: "GYRO",
-                timestamp: timestamp,
-                quaternion: {
-                    x: (1 - (qx >> 15) * 2) * (qx & 0x7FFF) / 0x7FFF,
-                    y: (1 - (qy >> 15) * 2) * (qy & 0x7FFF) / 0x7FFF,
-                    z: (1 - (qz >> 15) * 2) * (qz & 0x7FFF) / 0x7FFF,
-                    w: (1 - (qw >> 15) * 2) * (qw & 0x7FFF) / 0x7FFF
-                },
-                velocity: {
-                    x: (1 - (vx >> 3) * 2) * (vx & 0x7),
-                    y: (1 - (vy >> 3) * 2) * (vy & 0x7),
-                    z: (1 - (vz >> 3) * 2) * (vz & 0x7)
-                }
-            });
+            cubeEvents.push(decodeGyroEvent(msg, timestamp, 16, 80));
 
             if (firstGyroThisSession && this.hardwareInfoEmitted && Object.keys(this.hwInfo).length == 4) {
                 cubeEvents.push(this.buildHardwareEvent(timestamp));
