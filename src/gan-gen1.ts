@@ -4,6 +4,7 @@ import { Subject } from 'rxjs';
 import * as def from './gan-cube-definitions';
 import type { GanCubeCommand, GanCubeConnection, GanCubeEvent } from './gan-cube-protocol';
 import { now } from './utils';
+import { moveDirectionFromNotation } from './smartcube/cubie-cube';
 
 type AesBlockCipher = AES & { decrypt(block: number[]): number[] };
 
@@ -296,7 +297,7 @@ export class GanGen1CubeConnection implements GanCubeConnection {
                     const d = moves[r]?.trim();
                     if (!d) continue;
                     const f = 'URFDLB'.indexOf(d[0]!);
-                    const h = d.endsWith("'") ? 1 : 0;
+                    const h = moveDirectionFromNotation(d);
                     this.events$.next({
                         timestamp: ts,
                         type: 'MOVE',

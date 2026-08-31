@@ -4,7 +4,7 @@ import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabil
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
-import { CubieCube } from '../cubie-cube';
+import { CubieCube, moveDirectionFromNotation } from '../cubie-cube';
 import { now, findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 
@@ -149,7 +149,7 @@ class GiikerConnection implements SmartCubeConnection {
         if (this.lastFacelet && this.lastFacelet !== facelet && prevMoves.length > 0) {
             const moveStr = prevMoves[0].trim();
             const face = "URFDLB".indexOf(moveStr[0]);
-            const direction = moveStr.includes("2") ? 2 : moveStr.includes("'") ? 1 : 0;
+            const direction = moveDirectionFromNotation(moveStr);
 
             this.events$.next({
                 timestamp,
@@ -273,7 +273,7 @@ class GiikerConnection implements SmartCubeConnection {
             if (this.lastFacelet && this.lastFacelet !== f2 && m2.length > 0) {
                 const moveStr = m2[0].trim();
                 const face = "URFDLB".indexOf(moveStr[0]);
-                const direction = moveStr.includes("2") ? 2 : moveStr.includes("'") ? 1 : 0;
+                const direction = moveDirectionFromNotation(moveStr);
                 this.events$.next({
                     timestamp: ts2,
                     type: "MOVE",

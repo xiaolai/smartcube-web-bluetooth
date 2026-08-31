@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
 import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
-import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moves } from '../../test/helpers/events';
+import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { moyu32Protocol } from './moyu32';
 
 describe('moyu32Protocol.connect (capture replay)', () => {
@@ -38,6 +38,7 @@ describe('moyu32Protocol.connect (capture replay)', () => {
 
     expect(moves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLast);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     expect(conn.capabilities.gyroscope).toBe(false);
     expect(events.some((e) => e.type === 'GYRO')).toBe(false);
@@ -74,6 +75,7 @@ describe('moyu32Protocol.connect (capture replay)', () => {
 
     expect(moves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLast);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     // This fixture contains gyro traffic; capability should flip and at least one GYRO event should exist.
     expect(conn.capabilities.gyroscope).toBe(true);

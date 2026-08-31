@@ -3,7 +3,7 @@ import type { SmartCubeEvent } from '../types';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
 import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
-import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moves } from '../../test/helpers/events';
+import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { goCubeProtocol, parseGoCubeOrientationPayload } from './gocube';
 
 describe('GoCube orientation payload', () => {
@@ -45,6 +45,7 @@ describe('gocubeProtocol.connect (capture replay)', () => {
     const expectedLast = fixtureExpectedLastFacelets(fixture);
     expect(moves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLast);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     // gyro should be supported for classic GoCube
     expect(conn.capabilities.gyroscope).toBe(true);
@@ -77,6 +78,7 @@ describe('gocubeProtocol.connect (capture replay)', () => {
     const expectedLast = fixtureExpectedLastFacelets(fixture);
     expect(moves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLast);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     // Rubik’s Connected lacks IMU in this protocol impl
     expect(conn.capabilities.gyroscope).toBe(false);

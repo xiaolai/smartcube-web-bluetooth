@@ -150,4 +150,14 @@ class CubieCube {
     })();
 }
 
-export { CubieCube, SOLVED_FACELET, cFacelet, eFacelet };
+/**
+ * `direction` value for a move in standard notation:
+ * 0 = clockwise ("R"), 1 = counter-clockwise ("R'"), 2 = half turn ("R2").
+ */
+function moveDirectionFromNotation(move: string): 0 | 1 | 2 {
+    if (move.endsWith("'")) return 1;
+    if (move.endsWith('2')) return 2;
+    return 0;
+}
+
+export { CubieCube, SOLVED_FACELET, cFacelet, eFacelet, moveDirectionFromNotation };

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
 import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
-import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moves } from '../../test/helpers/events';
+import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { ganProtocol } from './gan';
 import * as def from '../../gan-cube-definitions';
 import { GanGen4CubeEncrypter } from '../../gan-cube-encrypter';
@@ -81,6 +81,7 @@ describe('ganProtocol.connect (capture replay)', () => {
     const expectedLast = fixtureExpectedLastFacelets(fixture);
     expect(moves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLast);
+    expect(moveDirectionMismatches(events)).toEqual([]);
     expect(conn.capabilities.gyroscope).toBe(false);
 
     await conn.disconnect();
@@ -120,6 +121,7 @@ describe('ganProtocol.connect (capture replay)', () => {
         e.type === 'HARDWARE'
       )
     ).toBe(true);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     await conn.disconnect();
   }, 20_000);

@@ -8,7 +8,7 @@ import { getCachedMacForDevice } from '../attachment/address-hints';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
-import { CubieCube, SOLVED_FACELET } from '../cubie-cube';
+import { CubieCube, SOLVED_FACELET, moveDirectionFromNotation } from '../cubie-cube';
 import { now, findCharacteristic, waitForAdvertisements } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 
@@ -300,7 +300,7 @@ class Moyu32Connection implements SmartCubeConnection {
                     this.deviceTime += timeOffs[i];
 
                     const face = Math.floor(m / 3);
-                    const direction = m % 3;
+                    const direction = moveDirectionFromNotation(moveNotation);
 
                     this.events$.next({
                         timestamp,
