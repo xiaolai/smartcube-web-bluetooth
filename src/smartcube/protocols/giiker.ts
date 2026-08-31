@@ -18,6 +18,9 @@ const CHRCT_UUID_WRITE = '0000aaac' + UUID_SUFFIX;
 
 /** Every Giiker state notification/read is a 20-byte frame (18 data bytes + encryption marker/key nibbles). */
 const GIIKER_STATE_LENGTH = 20;
+/** Control-service opcodes (0xAAAC write / 0xAAAB response). */
+const GIIKER_OP_BATTERY = 0xb5;
+const GIIKER_OP_RESET = 0xa1;
 
 const GIIKER_CFACELET = [
     [26, 15, 29], [20, 8, 9], [18, 38, 6], [24, 27, 44],
@@ -33,12 +36,7 @@ const GIIKER_EFACELET = [
 const DECRYPT_KEY = [176, 81, 104, 224, 86, 137, 237, 119, 38, 26, 193, 161, 210, 126, 150, 81, 93, 13, 236, 249, 89, 235, 88, 24, 113, 81, 214, 131, 130, 199, 2, 169, 39, 165, 171, 41];
 const CO_MASK = [-1, 1, -1, 1, 1, -1, 1, -1];
 
-type GiikerHexPayload = {
-    valhex: number[];
-    logicalBytes: number;
-};
-
-function giikerHexPayload(value: DataView): GiikerHexPayload {
+function giikerHexPayload(value: DataView): number[] {
     const raw: number[] = [];
     for (let i = 0; i < 20; i++) {
         raw.push(value.getUint8(i));
@@ -59,21 +57,33 @@ function giikerHexPayload(value: DataView): GiikerHexPayload {
         valhex.push((raw[i] >> 4) & 0xf);
         valhex.push(raw[i] & 0xf);
     }
-    return { valhex, logicalBytes };
+    return valhex;
 }
 
 function giikerMoveString(faceNibble: number, dirNibble: number): string | null {
     const face = ["?", "B", "D", "L", "U", "R", "F"][faceNibble];
     if (!face || face === "?") return null;
 
-    // Observed mappings: 1/2 => "", 3 => "2", 4 => "'", and some firmwares use 9 for half-turn.
-    const dirKey = dirNibble === 9 ? 3 : dirNibble;
-    const suffix = ["", "", "2", "'"][dirKey] ?? "";
+    // Verified against the captured session: 1 = clockwise, 3 = prime. 2 and the
+    // 9 some firmwares send are half turns. Unknown values are rejected, not
+    // silently treated as clockwise.
+    const suffix = ({ 1: '', 2: '2', 3: "'", 9: '2' } as Record<number, string>)[dirNibble];
+    if (suffix === undefined) return null;
     return `${face}${suffix}`;
 }
 
-function parseState(value: DataView): { facelet: string; prevMoves: string[] } {
-    const { valhex } = giikerHexPayload(value);
+/** Decode a state frame; returns null when the payload is not a structurally valid cube. */
+function parseState(value: DataView): { facelet: string; prevMoves: string[] } | null {
+    const valhex = giikerHexPayload(value);
+
+    // Validate nibble ranges before indexing facelet tables: corrupt frames
+    // previously threw inside toFaceCube or emitted impossible states.
+    for (let i = 0; i < 8; i++) {
+        if (valhex[i]! < 1 || valhex[i]! > 8) return null;
+    }
+    for (let i = 0; i < 12; i++) {
+        if (valhex[i + 16]! < 1 || valhex[i + 16]! > 12) return null;
+    }
 
     const eo: number[] = [];
     for (let i = 0; i < 3; i++) {
@@ -83,11 +93,18 @@ function parseState(value: DataView): { facelet: string; prevMoves: string[] } {
     }
 
     const cc = new CubieCube();
+    const cornersSeen = new Set<number>();
+    const edgesSeen = new Set<number>();
     for (let i = 0; i < 8; i++) {
         cc.ca[i] = (valhex[i] - 1) | (((3 + valhex[i + 8] * CO_MASK[i]) % 3) << 3);
+        cornersSeen.add(valhex[i]!);
     }
     for (let i = 0; i < 12; i++) {
         cc.ea[i] = ((valhex[i + 16] - 1) << 1) | eo[i];
+        edgesSeen.add(valhex[i + 16]!);
+    }
+    if (cornersSeen.size !== 8 || edgesSeen.size !== 12) {
+        return null; // duplicate pieces: not a cube state
     }
     const facelet = cc.toFaceCube(GIIKER_CFACELET, GIIKER_EFACELET);
 
@@ -111,10 +128,11 @@ class GiikerConnection implements SmartCubeConnection {
     readonly protocol: SmartCubeProtocolInfo = GIIKER_PROTOCOL;
     private readonly bus = new SmartCubeEventBus({
         gyroscope: false,
-        battery: true,
+        // battery and reset are enabled only once the optional control service is up.
+        battery: false,
         facelets: true,
         hardware: true,
-        reset: true
+        reset: false
     });
     readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
     readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
@@ -123,12 +141,14 @@ class GiikerConnection implements SmartCubeConnection {
     private gatt: BluetoothRemoteGATTServer | null = null;
     private dataChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private lastFacelet: string = '';
-    private isReady = false;
-    private pendingValues: DataView[] = [];
+    /** MOVE events are suppressed until init completes: pre-connect frames only seed state. */
+    private live = false;
+    private closed = false;
     private rwReadChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private rwWriteChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private batteryInterval: ReturnType<typeof setInterval> | null = null;
     private onBatteryChanged: ((evt: Event) => void) | null = null;
+    private batteryPollFailures = 0;
 
     constructor(device: BluetoothDevice, name: string) {
         this.device = device;
@@ -148,21 +168,20 @@ class GiikerConnection implements SmartCubeConnection {
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
         if (!value || value.byteLength < GIIKER_STATE_LENGTH) return; // truncated frame
-        if (!this.isReady) {
-            // Copy the view, because the underlying buffer can be reused by the platform.
-            const b = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-            this.pendingValues.push(new DataView(b));
-            return;
-        }
-        this.handleStateValue(value);
+        // Frames are processed in arrival order from the moment notifications start —
+        // queueing them for replay after the initial read could reverse state order.
+        this.handleStateValue(value, now());
     };
 
     /** Decode one state frame and emit the derived MOVE (if any) plus FACELETS. */
-    private handleStateValue(value: DataView): void {
-        const timestamp = now();
-        const { facelet, prevMoves } = parseState(value);
+    private handleStateValue(value: DataView, timestamp: number): void {
+        const parsed = parseState(value);
+        if (!parsed) {
+            return; // corrupt frame: keep the previous state
+        }
+        const { facelet, prevMoves } = parsed;
 
-        if (this.lastFacelet && this.lastFacelet !== facelet && prevMoves.length > 0) {
+        if (this.live && this.lastFacelet && this.lastFacelet !== facelet && prevMoves.length > 0) {
             const moveStr = prevMoves[0].trim();
             const face = "URFDLB".indexOf(moveStr[0]);
             const direction = moveDirectionFromNotation(moveStr);
@@ -195,80 +214,131 @@ class GiikerConnection implements SmartCubeConnection {
         });
     }
 
-    private onDisconnect = (): void => {
+    /** Idempotent teardown shared by remote and explicit disconnects. */
+    private teardown(): void {
+        this.closed = true;
+        this.live = false;
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.isReady = false;
-        this.pendingValues = [];
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
+        if (this.dataChrct) {
+            this.dataChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
+            this.dataChrct = null;
         }
         if (this.rwReadChrct && this.onBatteryChanged) {
             this.rwReadChrct.removeEventListener('characteristicvaluechanged', this.onBatteryChanged);
         }
         this.onBatteryChanged = null;
+        this.rwWriteChrct = null;
+        this.bus.resetBatteryDedupe();
+        if (this.batteryInterval) {
+            clearInterval(this.batteryInterval);
+            this.batteryInterval = null;
+        }
         this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
         this.bus.complete();
+    }
+
+    private onDisconnect = (): void => {
+        this.teardown();
     };
 
     async init(): Promise<void> {
         this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
-
-        this.gatt = await this.device.gatt!.connect();
-        const dataService = await this.gatt.getPrimaryService(SERVICE_UUID_DATA);
-        this.dataChrct = await dataService.getCharacteristic(CHRCT_UUID_DATA);
-
-        // Attach listener before notifications to reduce missed packets.
-        this.dataChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
-        await this.dataChrct.startNotifications();
-        const initialValue = await this.dataChrct.readValue();
-        if (initialValue.byteLength < GIIKER_STATE_LENGTH) {
-            throw new Error(`[Giiker] Unexpected state length ${initialValue.byteLength}, expected ${GIIKER_STATE_LENGTH}`);
-        }
-        const { facelet } = parseState(initialValue);
-        this.lastFacelet = facelet;
-
-        const timestamp = now();
-        this.bus.emit({
-            timestamp,
-            type: "FACELETS",
-            facelets: facelet
-        });
-
-        // Setup periodic battery polling if the control service is available.
         try {
-            const rwService = await this.gatt.getPrimaryService(SERVICE_UUID_RW);
-            const chrcts = await rwService.getCharacteristics();
-            this.rwReadChrct = findCharacteristic(chrcts, CHRCT_UUID_READ);
-            this.rwWriteChrct = findCharacteristic(chrcts, CHRCT_UUID_WRITE);
-            if (this.rwReadChrct && this.rwWriteChrct) {
-                this.onBatteryChanged = (evt: Event) => {
-                    const val = (evt.target as BluetoothRemoteGATTCharacteristic).value;
-                    if (!val) return;
-                    this.bus.emitBattery(val.getUint8(1));
-                };
-                this.rwReadChrct.addEventListener('characteristicvaluechanged', this.onBatteryChanged);
-                await this.rwReadChrct.startNotifications();
+            this.gatt = await this.device.gatt!.connect();
+            const dataService = await this.gatt.getPrimaryService(SERVICE_UUID_DATA);
+            this.dataChrct = await dataService.getCharacteristic(CHRCT_UUID_DATA);
 
-                const tick = () => {
-                    if (!this.rwWriteChrct) return;
-                    writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([0xb5]).buffer).catch(() => {});
-                };
-                tick();
-                this.batteryInterval = setInterval(tick, 60_000);
+            // Attach listener before notifications to reduce missed packets.
+            this.dataChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
+            await this.dataChrct.startNotifications();
+            const initialValue = await this.dataChrct.readValue();
+            if (!this.lastFacelet) {
+                // No notification established a baseline yet: use the explicit read.
+                if (initialValue.byteLength < GIIKER_STATE_LENGTH) {
+                    throw new Error(`[Giiker] Unexpected state length ${initialValue.byteLength}, expected ${GIIKER_STATE_LENGTH}`);
+                }
+                const parsed = parseState(initialValue);
+                if (!parsed) {
+                    throw new Error('[Giiker] Initial state read is not a valid cube state');
+                }
+                this.lastFacelet = parsed.facelet;
+                this.bus.emit({
+                    timestamp: now(),
+                    type: "FACELETS",
+                    facelets: parsed.facelet
+                });
             }
-        } catch {
-            // Battery service may not be available
-        }
 
-        // Release any queued notifications that arrived during init.
-        this.isReady = true;
-        const queued = this.pendingValues;
-        this.pendingValues = [];
-        for (const dv of queued) {
-            this.handleStateValue(dv);
+            await this.setupBatteryService();
+
+            if (this.closed) {
+                // The device disconnected while optional setup was in flight.
+                throw new Error('[Giiker] disconnected during initialization');
+            }
+            this.live = true;
+        } catch (e) {
+            this.teardown();
+            if (this.device.gatt?.connected) {
+                this.device.gatt.disconnect();
+            }
+            throw e;
         }
+    }
+
+    /** Optional control service: capabilities are enabled only after setup succeeds. */
+    private async setupBatteryService(): Promise<void> {
+        try {
+            const rwService = await this.gatt!.getPrimaryService(SERVICE_UUID_RW);
+            const chrcts = await rwService.getCharacteristics();
+            const readChrct = findCharacteristic(chrcts, CHRCT_UUID_READ);
+            const writeChrct = findCharacteristic(chrcts, CHRCT_UUID_WRITE);
+            if (!readChrct || !writeChrct) {
+                return;
+            }
+            const onBatteryChanged = (evt: Event): void => {
+                const val = (evt.target as BluetoothRemoteGATTCharacteristic).value;
+                // Only 0xB5 responses with a payload byte are battery reports.
+                if (!val || val.byteLength < 2 || val.getUint8(0) !== GIIKER_OP_BATTERY) return;
+                this.bus.emitBattery(val.getUint8(1));
+            };
+            readChrct.addEventListener('characteristicvaluechanged', onBatteryChanged);
+            try {
+                await readChrct.startNotifications();
+            } catch (e) {
+                readChrct.removeEventListener('characteristicvaluechanged', onBatteryChanged);
+                throw e;
+            }
+            // Commit fields only after the whole setup succeeded.
+            this.rwReadChrct = readChrct;
+            this.rwWriteChrct = writeChrct;
+            this.onBatteryChanged = onBatteryChanged;
+            this.bus.setCapabilities({ battery: true, reset: true });
+            this.batteryPollFailures = 0;
+            this.requestBatteryPoll();
+            this.batteryInterval = setInterval(() => this.requestBatteryPoll(), 60_000);
+        } catch {
+            // Control service absent or unusable: battery/reset stay unavailable.
+        }
+    }
+
+    private requestBatteryPoll(): void {
+        if (!this.rwWriteChrct) return;
+        writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([GIIKER_OP_BATTERY]).buffer).then(
+            () => {
+                this.batteryPollFailures = 0;
+            },
+            () => {
+                // A permanently broken control channel should not poll forever while
+                // advertising a battery capability it cannot serve.
+                if (++this.batteryPollFailures >= 5) {
+                    if (this.batteryInterval) {
+                        clearInterval(this.batteryInterval);
+                        this.batteryInterval = null;
+                    }
+                    this.bus.setCapabilities({ battery: false });
+                }
+            },
+        );
     }
 
     async sendCommand(command: SmartCubeCommand): Promise<void> {
@@ -276,7 +346,12 @@ class GiikerConnection implements SmartCubeConnection {
             // Periodic battery polling is set up in init when available.
             if (this.rwWriteChrct) {
                 this.bus.forceNextBattery();
-                await writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([0xb5]).buffer);
+                try {
+                    await writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([GIIKER_OP_BATTERY]).buffer);
+                } catch (e) {
+                    this.bus.cancelForcedBattery();
+                    throw e;
+                }
             }
         } else if (command.type === "REQUEST_FACELETS") {
             if (this.lastFacelet) {
@@ -290,34 +365,22 @@ class GiikerConnection implements SmartCubeConnection {
             this.emitHardwareEvent();
         } else if (command.type === "REQUEST_RESET") {
             if (this.rwWriteChrct) {
-                await writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([0xa1]).buffer);
+                await writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([GIIKER_OP_RESET]).buffer);
             }
         }
     }
 
     async disconnect(): Promise<void> {
-        if (this.dataChrct) {
-            this.dataChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
-            await this.dataChrct.stopNotifications().catch(() => {});
-            this.dataChrct = null;
+        const dataChrct = this.dataChrct;
+        const rwReadChrct = this.rwReadChrct;
+        this.rwReadChrct = null;
+        this.teardown();
+        if (dataChrct) {
+            await dataChrct.stopNotifications().catch(() => {});
         }
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
+        if (rwReadChrct) {
+            await rwReadChrct.stopNotifications().catch(() => {});
         }
-        if (this.rwReadChrct) {
-            if (this.onBatteryChanged) {
-                this.rwReadChrct.removeEventListener('characteristicvaluechanged', this.onBatteryChanged);
-            }
-            await this.rwReadChrct.stopNotifications().catch(() => {});
-            this.rwReadChrct = null;
-        }
-        this.onBatteryChanged = null;
-        this.rwWriteChrct = null;
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }
@@ -346,14 +409,16 @@ const giikerProtocol: SmartCubeProtocol = {
         _context?: AttachmentContext
     ): Promise<SmartCubeConnection> {
         const devName = device.name || '';
-        const name =
-            devName.startsWith('GiC') ? 'Giiker i3' :
-                devName.startsWith('GiS') ? 'Giiker i3S' :
-                    devName.startsWith('GiY') ? 'Giiker i3Y' :
-                        devName.startsWith('Mi Smart') ? 'Mi Smart Magic Cube' :
-                            devName.startsWith('Gi') ? 'Giiker i3SE' :
-                                devName.startsWith('Hi-') ? 'Hi-' :
-                                    devName || 'Unknown';
+        // Ordered table: the first matching prefix names the model.
+        const MODEL_NAMES: readonly [string, string][] = [
+            ['GiC', 'Giiker i3'],
+            ['GiS', 'Giiker i3S'],
+            ['GiY', 'Giiker i3Y'],
+            ['Mi Smart', 'Mi Smart Magic Cube'],
+            ['Gi', 'Giiker i3SE'],
+            ['Hi-', 'Hi-'],
+        ];
+        const name = MODEL_NAMES.find(([prefix]) => devName.startsWith(prefix))?.[1] ?? (devName || 'Unknown');
         const conn = new GiikerConnection(device, name);
         await conn.init();
         return conn;

@@ -464,7 +464,7 @@
     "connected": true,
     "facelets": {
       "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
-      "timestamp": 5
+      "timestamp": 4
     },
     "battery": null,
     "hardware": null,
@@ -481,11 +481,11 @@
     "connected": true,
     "facelets": {
       "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
-      "timestamp": 67
+      "timestamp": 66
     },
     "battery": {
       "value": 85,
-      "timestamp": 7
+      "timestamp": 6
     },
     "hardware": null,
     "capabilities": {
