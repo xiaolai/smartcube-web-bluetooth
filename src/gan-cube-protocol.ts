@@ -3,6 +3,7 @@ import { now, toKociembaFacelets } from './utils';
 import { GanCubeEncrypter } from './gan-cube-encrypter';
 import { GattWriteQueue } from './gan-write-queue';
 import { writeGattCharacteristicValue } from './gatt-characteristic-write';
+import { GanBitReader } from './gan-bit-reader';
 import { Observable, Subject } from 'rxjs';
 
 /** Command for requesting information about GAN Smart Cube hardware  */
@@ -322,34 +323,6 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
 }
 
 /**
- * View for binary protocol messages allowing to retrieve from message arbitrary length bit words
- */
-class GanProtocolMessageView {
-
-    private bits: string;
-
-    constructor(message: Uint8Array) {
-        this.bits = Array.from(message).map(byte => (byte + 0x100).toString(2).slice(1)).join('');
-    }
-
-    getBitWord(startBit: number, bitLength: number, littleEndian = false): number {
-        if (bitLength <= 8) {
-            return parseInt(this.bits.slice(startBit, startBit + bitLength), 2);
-        } else if (bitLength == 16 || bitLength == 32) {
-            let buf = new Uint8Array(bitLength / 8);
-            for (let i = 0; i < buf.length; i++) {
-                buf[i] = parseInt(this.bits.slice(8 * i + startBit, 8 * i + startBit + 8), 2);
-            }
-            let dv = new DataView(buf.buffer);
-            return bitLength == 16 ? dv.getUint16(0, littleEndian) : dv.getUint32(0, littleEndian);
-        } else {
-            throw new Error('Unsupproted bit word length');
-        }
-    }
-
-}
-
-/**
  * Driver implementation for GAN Gen2 protocol, supported cubes:
  *  - GAN Mini ui FreePlay
  *  - GAN12 ui FreePlay
@@ -391,7 +364,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
         var timestamp = now();
 
         var cubeEvents: GanCubeEvent[] = [];
-        var msg = new GanProtocolMessageView(eventMessage);
+        var msg = new GanBitReader(eventMessage);
         var eventType = msg.getBitWord(0, 4);
 
         if (eventType == 0x01) { // GYRO
@@ -668,7 +641,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
         var timestamp = now();
 
         var cubeEvents: GanCubeEvent[] = [];
-        var msg = new GanProtocolMessageView(eventMessage);
+        var msg = new GanBitReader(eventMessage);
 
         var magic = msg.getBitWord(0, 8);
         var eventType = msg.getBitWord(8, 8);
@@ -979,7 +952,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
         var timestamp = now();
 
         var cubeEvents: GanCubeEvent[] = [];
-        var msg = new GanProtocolMessageView(eventMessage);
+        var msg = new GanBitReader(eventMessage);
 
         var eventType = msg.getBitWord(0, 8);
         var dataLength = msg.getBitWord(8, 8);
