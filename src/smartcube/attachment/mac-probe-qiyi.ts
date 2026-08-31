@@ -1,7 +1,9 @@
-import { ModeOfOperation } from 'aes-js';
+import aesjs from 'aes-js';
 import { findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 import { isValidQiYiDecryptedPacket } from './packet-sanity';
+
+const { ModeOfOperation } = aesjs;
 
 const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
 const QIYI_SVC = '0000fff0' + UUID_SUFFIX;

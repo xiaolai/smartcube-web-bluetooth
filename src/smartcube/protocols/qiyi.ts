@@ -1,5 +1,5 @@
 import { Subject } from 'rxjs';
-import { ModeOfOperation } from 'aes-js';
+import aesjs from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
@@ -14,6 +14,8 @@ import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
 const SERVICE_UUID = '0000fff0' + UUID_SUFFIX;
 const CHRCT_UUID_CUBE = '0000fff6' + UUID_SUFFIX;
+
+const { ModeOfOperation } = aesjs;
 
 const QIYI_CIC_LIST = [0x0504];
 const QIYI_KEY = [87, 177, 249, 171, 205, 90, 232, 167, 156, 185, 140, 231, 87, 140, 81, 8];

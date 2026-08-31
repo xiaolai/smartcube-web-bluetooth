@@ -14,8 +14,9 @@
   "scripts": {
     "clean": "rm -rf dist/",
     "compile:bundles": "rollup -c",
+    "check:dist": "node scripts/check-dist.mjs",
     "compile:types": "tsc -p tsconfig.types.json",
-    "build": "npm run clean && npm run compile:types && npm run compile:bundles",
+    "build": "npm run clean && npm run compile:types && npm run compile:bundles && npm run check:dist",
     "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -47,16 +48,15 @@
   "dependencies": {
     "@types/web-bluetooth": "^0.0.20",
     "aes-js": "^3.1.2",
-    "lz-string": "^1.5.0",
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@rollup/plugin-typescript": "^11.1.6",
     "@types/aes-js": "^3.1.4",
     "@types/node": "^22.19.15",
+    "happy-dom": "^18.0.1",
     "rollup": "^4.60.0",
     "typescript": "^5.9.3",
-    "happy-dom": "^18.0.1",
     "vitest": "^3.2.4",
     "vitest-mock-extended": "^2.0.2"
   },

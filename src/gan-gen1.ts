@@ -1,5 +1,5 @@
-import { AES } from 'aes-js';
-import { decompressFromEncodedURIComponent } from 'lz-string';
+import aesjs from 'aes-js';
+import type { AES } from 'aes-js';
 import { Subject } from 'rxjs';
 import * as def from './gan-cube-definitions';
 import type { GanCubeCommand, GanCubeConnection, GanCubeEvent } from './gan-cube-protocol';
@@ -11,7 +11,7 @@ class GanGen1Aes {
     private readonly aes: AesBlockCipher;
 
     constructor(keyBytes: Uint8Array) {
-        this.aes = new AES([...keyBytes]) as AesBlockCipher;
+        this.aes = new aesjs.AES([...keyBytes]) as AesBlockCipher;
     }
 
     decrypt(data: Uint8Array): Uint8Array {
@@ -28,24 +28,15 @@ class GanGen1Aes {
     }
 }
 
-function deriveGen1Key(fwVersion: number, hw: DataView): Uint8Array | null {
+/** Key table index is the firmware "major" byte; unknown majors fall back to table 0. */
+export function deriveGen1Key(fwVersion: number, hw: DataView): Uint8Array | null {
     const idx = (fwVersion >> 8) & 255;
-    const compressed = def.GAN_GEN1_COMPRESSED_KEYS[idx] ?? def.GAN_GEN1_COMPRESSED_KEYS[0];
-    if (!compressed) return null;
-    const json = decompressFromEncodedURIComponent(compressed);
-    if (!json) return null;
-    let arr: number[];
-    try {
-        arr = JSON.parse(json) as number[];
-    } catch {
-        return null;
-    }
-    if (!Array.isArray(arr) || arr.length < 6) return null;
-    if (hw.byteLength < 6) return null;
+    const table = def.GAN_GEN1_KEYS[idx] ?? def.GAN_GEN1_KEYS[0];
+    if (!table || hw.byteLength < 6) return null;
+    const arr = Array.from(table);
     for (let s = 0; s < 6; s++) {
-        arr[s] = (arr[s]! + hw.getUint8(5 - s)!) & 255;
+        arr[s] = (arr[s]! + hw.getUint8(5 - s)) & 255;
     }
-    if (arr.length < 16) return null;
     return new Uint8Array(arr.slice(0, 16));
 }
 

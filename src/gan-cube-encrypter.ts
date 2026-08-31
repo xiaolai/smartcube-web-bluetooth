@@ -1,5 +1,8 @@
 
-import { ModeOfOperation } from 'aes-js';
+import aesjs from 'aes-js';
+
+// aes-js ships CommonJS only; a default import resolves in Node ESM, CJS and every bundler.
+const { ModeOfOperation } = aesjs;
 
 /**
  * Common cube encrypter interface
