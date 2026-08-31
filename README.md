@@ -84,6 +84,59 @@ if (conn.capabilities.battery) {
 }
 ```
 
+### Reading the current state
+
+`events$` is live-only: events emitted while the connection was still being established are
+not replayed to subscribers. The connection keeps an immutable, revisioned state snapshot
+instead:
+
+```typescript
+const snapshot = conn.getSnapshot();
+console.log("Facelets", snapshot.facelets?.value, "battery", snapshot.battery?.value);
+
+conn.state$.subscribe((s) => {
+    // called with the current snapshot immediately, then on every change
+    console.log("revision", s.revision, "connected", s.connected, "gyro", s.capabilities.gyroscope);
+});
+```
+
+### Connection options
+
+`connectSmartCube(options)` accepts:
+
+| Option | Description |
+|-|-|
+| `macAddressProvider` | async fallback for the cube MAC address when it cannot be resolved automatically |
+| `deviceSelection` | `'filtered'` (default: name/manufacturer filters in the picker) or `'any'` |
+| `deviceName` | adds exact-name scan filters; helps reconnect a cube whose advertised name is not prefix-stable |
+| `enableAddressSearch` | when advertisement and name hints fail (QiYi / MoYu WCU), probe a bounded set of name-derived MAC candidates (slow; default false) |
+| `signal` | `AbortSignal` that cancels the connect (advertisement wait, GATT connect, MAC search) |
+| `onStatus` | receives short progress messages ("Connecting…", "Testing address (1/3)…") |
+
+### MAC addresses
+
+GAN gen2–4, MoYu WCU and QiYi cubes encrypt their traffic with a key derived from the cube's
+Bluetooth MAC address, which the Web Bluetooth API does not expose directly. The library
+resolves it from advertisement manufacturer data where possible — in Chrome this requires
+enabling `chrome://flags/#enable-experimental-web-platform-features` for
+`watchAdvertisements()` — then falls back to a per-device cache in `localStorage`, your
+`macAddressProvider`, and name-derived candidates. A resolved MAC is cached only after
+decrypted traffic proves it correct. `getCachedMacForDevice(device)` and
+`removeCachedMacForDevice(device)` manage the cache.
+
+### Event semantics
+
+- `move` is standard notation ("R", "U'", "F2"); `direction` is 0 = clockwise,
+  1 = counter-clockwise, 2 = half turn (only cubes that report a 180° turn as one move).
+- `timestamp` and `localTimestamp` are host-clock milliseconds based on
+  `performance.now()` — monotonic, not epoch time. `cubeTimestamp` is the cube's internal
+  clock where reported; fit it against the host clock with `cubeTimestampLinearFit()`.
+- `capabilities` can change after connect (gyroscope support is detected lazily on some
+  cubes); the current value is always available in `getSnapshot().capabilities`.
+
+Additional cube drivers can be registered with `registerProtocol()` — see
+`docs/ARCHITECTURE.md`.
+
 ### GAN-specific Smart Cube API (legacy)
 
 The original GAN-only APIs are still available for existing applications and continue to work on top of the new implementation:
@@ -117,7 +170,7 @@ Sample application how to use this library with GAN Smart Timer can be found her
 
 Sample TypeScript code:
 ```typescript
-import { connectGanTimer, GanTimerState } from 'gan-web-bluetooth';
+import { connectGanTimer, GanTimerState } from 'smartcube-web-bluetooth';
 
 var conn = await connectGanTimer();
 
