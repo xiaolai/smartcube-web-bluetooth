@@ -3,7 +3,7 @@ import { Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { resolveCubeMac } from '../attachment/resolve-mac';
 import { throwIfAborted } from '../attachment/abort';
 import { createMoyu32SessionCrypto, type Moyu32SessionCrypto } from '../attachment/moyu32-session-crypto';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
@@ -389,55 +389,14 @@ async function connectMoyu32Device(
     context?: AttachmentContext
 ): Promise<SmartCubeConnection> {
     throwIfAborted(context?.signal);
-    let mac = parseMoyu32MacFromMf(context?.advertisementManufacturerData ?? null);
-    mac = mac || getCachedMacForDevice(device);
-    if (!mac && macProvider) {
-        const r = await macProvider(device, false);
-        if (r) {
-            mac = r;
-        }
-    }
+    const mac = await resolveCubeMac(device, macProvider, context, {
+        parseFromManufacturerData: parseMoyu32MacFromMf,
+        advertisementTimeoutsMs: [5000, 8000],
+        candidatesFromName: buildMoyu32MacCandidatesFromName,
+        probe: probeMoyu32Mac,
+        probeTimeoutMs: 2000,
+    });
 
-    if (!mac) {
-        // The first advertisement frequently carries no manufacturer data; merge frames until one does.
-        const mfData = await waitForManufacturerData(device, context?.enableAddressSearch ? 8000 : 5000, {
-            earlyExitOnEmptyFirstAdvertisement: false,
-        });
-        mac = parseMoyu32MacFromMf(mfData);
-    }
-
-    if (!mac && context?.enableAddressSearch) {
-        const candidates = buildMoyu32MacCandidatesFromName(device.name);
-        const timeoutMs = 2000;
-        for (let i = 0; i < candidates.length; i++) {
-            if (context.signal?.aborted) {
-                break;
-            }
-            context.onStatus?.(`Testing address (${i + 1}/${candidates.length})…`);
-            try {
-                if (
-                    await probeMoyu32Mac(device, candidates[i]!, {
-                        timeoutMs,
-                        signal: context.signal,
-                    })
-                ) {
-                    mac = candidates[i]!;
-                    break;
-                }
-            } catch {
-                /* try next */
-            }
-        }
-    }
-
-    if (!mac && macProvider) {
-        const r = await macProvider(device, true);
-        if (r) {
-            mac = r;
-        }
-    }
-
-    throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine MoYu32 cube MAC address');
     }

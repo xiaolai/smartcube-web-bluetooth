@@ -2,7 +2,7 @@ import { Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { resolveCubeMac } from '../attachment/resolve-mac';
 import { throwIfAborted } from '../attachment/abort';
 import { parseMacBytes } from '../attachment/mac-address';
 import { crc16modbus, decryptQiYiBlocks, encryptQiYiMessage, qiyiHelloContent } from '../attachment/qiyi-wire';
@@ -341,62 +341,15 @@ async function connectQiYiDevice(
     context?: AttachmentContext
 ): Promise<SmartCubeConnection> {
     throwIfAborted(context?.signal);
-    let mac = parseQiYiMacFromMf(context?.advertisementManufacturerData ?? null);
-    mac = mac || getCachedMacForDevice(device);
-    if (!mac && macProvider) {
-        const r = await macProvider(device, false);
-        if (r) {
-            mac = r;
-        }
-    }
+    const mac = await resolveCubeMac(device, macProvider, context, {
+        parseFromManufacturerData: parseQiYiMacFromMf,
+        advertisementTimeoutsMs: [5000, 8000],
+        candidatesFromName: buildQiYiMacCandidatesFromName,
+        useSingleCandidateWithoutProbe: true,
+        probe: probeQiYiMac,
+        probeTimeoutMs: 3000,
+    });
 
-    if (!mac) {
-        // The first advertisement frequently carries no manufacturer data; merge frames until one does.
-        const mfData = await waitForManufacturerData(device, context?.enableAddressSearch ? 8000 : 5000, {
-            earlyExitOnEmptyFirstAdvertisement: false,
-        });
-        mac = parseQiYiMacFromMf(mfData);
-    }
-
-    if (!mac) {
-        const c = buildQiYiMacCandidatesFromName(device.name);
-        if (c.length === 1) {
-            mac = c[0]!;
-        }
-    }
-
-    if (!mac && context?.enableAddressSearch) {
-        const candidates = buildQiYiMacCandidatesFromName(device.name);
-        const timeoutMs = 3000;
-        for (let i = 0; i < candidates.length; i++) {
-            if (context.signal?.aborted) {
-                break;
-            }
-            context.onStatus?.(`Testing address (${i + 1}/${candidates.length})…`);
-            try {
-                if (
-                    await probeQiYiMac(device, candidates[i]!, {
-                        timeoutMs,
-                        signal: context.signal,
-                    })
-                ) {
-                    mac = candidates[i]!;
-                    break;
-                }
-            } catch {
-                /* try next */
-            }
-        }
-    }
-
-    if (!mac && macProvider) {
-        const r = await macProvider(device, true);
-        if (r) {
-            mac = r;
-        }
-    }
-
-    throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine QiYi cube MAC address');
     }
