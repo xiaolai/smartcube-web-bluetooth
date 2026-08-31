@@ -237,6 +237,115 @@ function decodeGyroEvent(msg: GanBitReader, timestamp: number, quaternionOffset:
     };
 }
 
+/**
+ * Shared gen3/gen4 move bookkeeping: FIFO of pending moves, gap detection via circular
+ * serials, history requests, and reverse-order injection of recovered moves.
+ */
+class GanMoveHistoryBuffer {
+
+    /** Serial of the most recent state report received from the cube */
+    serial: number = -1;
+    /** Serial of the last move evicted to subscribers */
+    lastSerial: number = -1;
+    lastLocalTimestamp: number | null = null;
+    private moveBuffer: GanCubeEvent[] = [];
+
+    constructor(private readonly buildHistoryRequest: (serial: number, count: number) => Uint8Array) {}
+
+    push(move: GanCubeEvent): void {
+        this.moveBuffer.push(move);
+    }
+
+    /** Private cube command for requesting move history */
+    private async requestMoveHistory(conn: GanCubeRawConnection, serial: number, count: number): Promise<void> {
+        // Move history response data is byte-aligned, and moves always starting with near-ceil odd serial number, regardless of requested.
+        // Adjust serial and count to get odd serial aligned history window with even number of moves inside.
+        if (serial % 2 == 0)
+            serial = (serial - 1) & 0xFF;
+        if (count % 2 == 1)
+            count++;
+        // Never overflow requested history window beyond the serial number cycle edge 255 -> 0.
+        // Because due to firmware bugs (e.g. iCarry2) the moves beyond the edge will be spoofed with 'D' (just zero bytes).
+        count = Math.min(count, serial + 1);
+        return conn.sendCommandMessage(this.buildHistoryRequest(serial, count)).catch(() => {
+            // We can safely suppress and ignore possible GATT write errors, requestMoveHistory command is automatically retried on next move event
+        });
+    }
+
+    /**
+     * Evict move events from FIFO buffer until missing move event detected
+     * In case of missing move, and if connection is provided, submit request for move history to fill gap in buffer
+     */
+    async evictMoveBuffer(conn?: GanCubeRawConnection): Promise<Array<GanCubeEvent>> {
+        var evictedEvents: GanCubeEvent[] = [];
+        while (this.moveBuffer.length > 0) {
+            let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+            let diff = this.lastSerial == -1 ? 1 : (bufferHead.serial - this.lastSerial) & 0xFF;
+            if (diff > 1) {
+                if (conn) {
+                    await this.requestMoveHistory(conn, bufferHead.serial, diff);
+                }
+                break;
+            } else {
+                evictedEvents.push(this.moveBuffer.shift()!);
+                this.lastSerial = bufferHead.serial;
+            }
+        }
+        // Probably something went wrong and buffer is no longer evicted, so forcibly disconnect the cube
+        if (conn && this.moveBuffer.length > 16) {
+            conn.disconnect().catch(() => { /* already disconnected */ });
+        }
+        return evictedEvents;
+    }
+
+    /**
+     * Check if circular serial number (modulo 256) fits into (start,end) serial number range.
+     * By default range is open, set closedStart / closedEnd to make it closed.
+     */
+    private isSerialInRange(start: number, end: number, serial: number, closedStart = false, closedEnd = false) {
+        return ((end - start) & 0xFF) >= ((serial - start) & 0xFF)
+            && (closedStart || ((start - serial) & 0xFF) > 0)
+            && (closedEnd || ((end - serial) & 0xFF) > 0);
+    }
+
+    /** Used to inject missed moves to FIFO buffer */
+    injectMissedMoveToBuffer(move: GanCubeEvent) {
+        if (move.type == "MOVE") {
+            if (this.moveBuffer.length > 0) {
+                var bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+                // Skip if move event with the same serial already in the buffer
+                if (this.moveBuffer.some(e => e.type == "MOVE" && e.serial == move.serial))
+                    return;
+                // Skip if move serial does not fit in range between last evicted event and event on buffer head, i.e. event must be one of missed
+                if (!this.isSerialInRange(this.lastSerial, bufferHead.serial, move.serial))
+                    return;
+                // Move history events should be injected in reverse order, so just put suitable event on buffer head
+                if (move.serial == ((bufferHead.serial - 1) & 0xFF)) {
+                    this.moveBuffer.unshift(move);
+                }
+            } else {
+                // This case happens when lost move is recovered using periodic 
+                // facelets state event, and being inserted into the empty buffer.
+                if (this.isSerialInRange(this.lastSerial, this.serial, move.serial, false, true)) {
+                    this.moveBuffer.unshift(move);
+                }
+            }
+        }
+    }
+
+    /** Used in response to periodic facelets event to check if any moves missed */
+    async checkIfMoveMissed(conn: GanCubeRawConnection) {
+        let diff = (this.serial - this.lastSerial) & 0xFF;
+        if (diff > 0) {
+            if (this.serial != 0) { // Constraint to avoid firmware bug (e.g. iCarry2) with facelets state event at 255 move counter
+                let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+                let startSerial = bufferHead ? bufferHead.serial : (this.serial + 1) & 0xFF;
+                await this.requestMoveHistory(conn, startSerial, diff + 1);
+            }
+        }
+    }
+}
+
 /** Optional hooks for {@link GanCubeClassicConnection.create}. */
 export type GanClassicConnectionOptions = {
     /** If set, decrypted payloads that fail this check are dropped (wrong MAC / noise). */
@@ -519,10 +628,11 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
  */
 class GanGen3ProtocolDriver implements GanProtocolDriver {
 
-    private serial: number = -1;
-    private lastSerial: number = -1;
-    private lastLocalTimestamp: number | null = null;
-    private moveBuffer: GanCubeEvent[] = [];
+    private readonly history = new GanMoveHistoryBuffer((serial, count) => {
+        const msg = new Uint8Array(16).fill(0);
+        msg.set([0x68, 0x03, serial, 0, count, 0]);
+        return msg;
+    });
 
     createCommandMessage(command: GanCubeCommand): Uint8Array | undefined {
         var msg: Uint8Array | undefined = new Uint8Array(16).fill(0);
@@ -545,97 +655,6 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
         return msg;
     }
 
-    /** Private cube command for requesting move history */
-    private async requestMoveHistory(conn: GanCubeRawConnection, serial: number, count: number): Promise<void> {
-        var msg = new Uint8Array(16).fill(0);
-        // Move history response data is byte-aligned, and moves always starting with near-ceil odd serial number, regardless of requested.
-        // Adjust serial and count to get odd serial aligned history window with even number of moves inside.
-        if (serial % 2 == 0)
-            serial = (serial - 1) & 0xFF;
-        if (count % 2 == 1)
-            count++;
-        // Never overflow requested history window beyond the serial number cycle edge 255 -> 0.
-        // Because due to iCarry2 firmware bug the moves beyond the edge will be spoofed with 'D' (just zero bytes).
-        count = Math.min(count, serial + 1);
-        msg.set([0x68, 0x03, serial, 0, count, 0]);
-        return conn.sendCommandMessage(msg).catch(() => {
-            // We can safely suppress and ignore possible GATT write errors, requestMoveHistory command is automatically retried on next move event
-        });
-    }
-
-    /**
-     * Evict move events from FIFO buffer until missing move event detected
-     * In case of missing move, and if connection is provided, submit request for move history to fill gap in buffer
-     */
-    private async evictMoveBuffer(conn?: GanCubeRawConnection): Promise<Array<GanCubeEvent>> {
-        var evictedEvents: GanCubeEvent[] = [];
-        while (this.moveBuffer.length > 0) {
-            let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
-            let diff = this.lastSerial == -1 ? 1 : (bufferHead.serial - this.lastSerial) & 0xFF;
-            if (diff > 1) {
-                if (conn) {
-                    await this.requestMoveHistory(conn, bufferHead.serial, diff);
-                }
-                break;
-            } else {
-                evictedEvents.push(this.moveBuffer.shift()!);
-                this.lastSerial = bufferHead.serial;
-            }
-        }
-        // Probably something went wrong and buffer is no longer evicted, so forcibly disconnect the cube
-        if (conn && this.moveBuffer.length > 16) {
-            conn.disconnect().catch(() => { /* already disconnected */ });
-        }
-        return evictedEvents;
-    }
-
-    /**
-     * Check if circular serial number (modulo 256) fits into (start,end) serial number range.
-     * By default range is open, set closedStart / closedEnd to make it closed.
-     */
-    private isSerialInRange(start: number, end: number, serial: number, closedStart = false, closedEnd = false) {
-        return ((end - start) & 0xFF) >= ((serial - start) & 0xFF)
-            && (closedStart || ((start - serial) & 0xFF) > 0)
-            && (closedEnd || ((end - serial) & 0xFF) > 0);
-    }
-
-    /** Used to inject missed moves to FIFO buffer */
-    private injectMissedMoveToBuffer(move: GanCubeEvent) {
-        if (move.type == "MOVE") {
-            if (this.moveBuffer.length > 0) {
-                var bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
-                // Skip if move event with the same serial already in the buffer
-                if (this.moveBuffer.some(e => e.type == "MOVE" && e.serial == move.serial))
-                    return;
-                // Skip if move serial does not fit in range between last evicted event and event on buffer head, i.e. event must be one of missed
-                if (!this.isSerialInRange(this.lastSerial, bufferHead.serial, move.serial))
-                    return;
-                // Move history events should be injected in reverse order, so just put suitable event on buffer head
-                if (move.serial == ((bufferHead.serial - 1) & 0xFF)) {
-                    this.moveBuffer.unshift(move);
-                }
-            } else {
-                // This case happens when lost move is recovered using periodic 
-                // facelets state event, and being inserted into the empty buffer.
-                if (this.isSerialInRange(this.lastSerial, this.serial, move.serial, false, true)) {
-                    this.moveBuffer.unshift(move);
-                }
-            }
-        }
-    }
-
-    /** Used in response to periodic facelets event to check if any moves missed */
-    private async checkIfMoveMissed(conn: GanCubeRawConnection) {
-        let diff = (this.serial - this.lastSerial) & 0xFF;
-        if (diff > 0) {
-            if (this.serial != 0) { // Constraint to avoid iCarry2 firmware bug with facelets state event at 255 move counter
-                let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
-                let startSerial = bufferHead ? bufferHead.serial : (this.serial + 1) & 0xFF;
-                await this.requestMoveHistory(conn, startSerial, diff + 1);
-            }
-        }
-    }
-
     async handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]> {
 
         var timestamp = now();
@@ -651,11 +670,11 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
             if (eventType == 0x01) { // MOVE
 
-                if (this.lastSerial != -1) { // Accept move events only after first facelets state event received
+                if (this.history.lastSerial != -1) { // Accept move events only after first facelets state event received
 
-                    this.lastLocalTimestamp = timestamp;
+                    this.history.lastLocalTimestamp = timestamp;
                     let cubeTimestamp = msg.getBitWord(24, 32, true);
-                    let serial = this.serial = msg.getBitWord(56, 16, true);
+                    let serial = this.history.serial = msg.getBitWord(56, 16, true);
 
                     let direction = msg.getBitWord(72, 2);
                     let face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(74, 6));
@@ -663,7 +682,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
                     // put move event into FIFO buffer
                     if (face >= 0) {
-                        this.moveBuffer.push({
+                        this.history.push({
                             type: "MOVE",
                             serial: serial,
                             timestamp: timestamp,
@@ -676,7 +695,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                     }
 
                     // evict move events from FIFO buffer
-                    cubeEvents = await this.evictMoveBuffer(conn);
+                    cubeEvents = await this.history.evictMoveBuffer(conn);
 
                 }
 
@@ -691,7 +710,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                     let direction = msg.getBitWord(35 + 4 * i, 1);
                     if (face >= 0) {
                         let move = "URFDLB".charAt(face) + " '".charAt(direction);
-                        this.injectMissedMoveToBuffer({
+                        this.history.injectMissedMoveToBuffer({
                             type: "MOVE",
                             serial: (startSerial - i) & 0xFF,
                             timestamp: timestamp,
@@ -705,22 +724,22 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                 }
 
                 // evict move events from FIFO buffer
-                cubeEvents = await this.evictMoveBuffer();
+                cubeEvents = await this.history.evictMoveBuffer();
 
             } else if (eventType == 0x02) { // FACELETS
 
-                let serial = this.serial = msg.getBitWord(24, 16, true);
+                let serial = this.history.serial = msg.getBitWord(24, 16, true);
 
                 // Also check and recovery missed moves using periodic facelets event sent by cube
-                if (this.lastSerial != -1) {
+                if (this.history.lastSerial != -1) {
                     // Debounce the facelet event if there are active cube moves
-                    if (this.lastLocalTimestamp != null && (timestamp - this.lastLocalTimestamp) > 500) {
-                        await this.checkIfMoveMissed(conn);
+                    if (this.history.lastLocalTimestamp != null && (timestamp - this.history.lastLocalTimestamp) > 500) {
+                        await this.history.checkIfMoveMissed(conn);
                     }
                 }
 
-                if (this.lastSerial == -1)
-                    this.lastSerial = serial;
+                if (this.history.lastSerial == -1)
+                    this.history.lastSerial = serial;
 
                 const state = decodeCornersEdges(msg, { cp: 40, co: 61, ep: 77, eo: 121 });
 
@@ -782,10 +801,11 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
  */
 class GanGen4ProtocolDriver implements GanProtocolDriver {
 
-    private serial: number = -1;
-    private lastSerial: number = -1;
-    private lastLocalTimestamp: number | null = null;
-    private moveBuffer: GanCubeEvent[] = [];
+    private readonly history = new GanMoveHistoryBuffer((serial, count) => {
+        const msg = new Uint8Array(20).fill(0);
+        msg.set([0xD1, 0x04, serial, 0, count, 0]);
+        return msg;
+    });
 
     // Used to store partial result acquired from hardware info events
     private hwInfo: { [key: number]: string } = {};
@@ -831,97 +851,6 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
         };
     }
 
-    /** Private cube command for requesting move history */
-    private async requestMoveHistory(conn: GanCubeRawConnection, serial: number, count: number): Promise<void> {
-        var msg = new Uint8Array(20).fill(0);
-        // Move history response data is byte-aligned, and moves always starting with near-ceil odd serial number, regardless of requested.
-        // Adjust serial and count to get odd serial aligned history window with even number of moves inside.
-        if (serial % 2 == 0)
-            serial = (serial - 1) & 0xFF;
-        if (count % 2 == 1)
-            count++;
-        // Never overflow requested history window beyond the serial number cycle edge 255 -> 0.
-        // Because due to firmware bug the moves beyond the edge will be spoofed with 'D' (just zero bytes).
-        count = Math.min(count, serial + 1);
-        msg.set([0xD1, 0x04, serial, 0, count, 0]);
-        return conn.sendCommandMessage(msg).catch(() => {
-            // We can safely suppress and ignore possible GATT write errors, requestMoveHistory command is automatically retried on next move event
-        });
-    }
-
-    /**
-     * Evict move events from FIFO buffer until missing move event detected
-     * In case of missing move, and if connection is provided, submit request for move history to fill gap in buffer
-     */
-    private async evictMoveBuffer(conn?: GanCubeRawConnection): Promise<Array<GanCubeEvent>> {
-        var evictedEvents: GanCubeEvent[] = [];
-        while (this.moveBuffer.length > 0) {
-            let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
-            let diff = this.lastSerial == -1 ? 1 : (bufferHead.serial - this.lastSerial) & 0xFF;
-            if (diff > 1) {
-                if (conn) {
-                    await this.requestMoveHistory(conn, bufferHead.serial, diff);
-                }
-                break;
-            } else {
-                evictedEvents.push(this.moveBuffer.shift()!);
-                this.lastSerial = bufferHead.serial;
-            }
-        }
-        // Probably something went wrong and buffer is no longer evicted, so forcibly disconnect the cube
-        if (conn && this.moveBuffer.length > 16) {
-            conn.disconnect().catch(() => { /* already disconnected */ });
-        }
-        return evictedEvents;
-    }
-
-    /**
-     * Check if circular serial number (modulo 256) fits into (start,end) serial number range.
-     * By default range is open, set closedStart / closedEnd to make it closed.
-     */
-    private isSerialInRange(start: number, end: number, serial: number, closedStart = false, closedEnd = false) {
-        return ((end - start) & 0xFF) >= ((serial - start) & 0xFF)
-            && (closedStart || ((start - serial) & 0xFF) > 0)
-            && (closedEnd || ((end - serial) & 0xFF) > 0);
-    }
-
-    /** Used to inject missed moves to FIFO buffer */
-    private injectMissedMoveToBuffer(move: GanCubeEvent) {
-        if (move.type == "MOVE") {
-            if (this.moveBuffer.length > 0) {
-                var bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
-                // Skip if move event with the same serial already in the buffer
-                if (this.moveBuffer.some(e => e.type == "MOVE" && e.serial == move.serial))
-                    return;
-                // Skip if move serial does not fit in range between last evicted event and event on buffer head, i.e. event must be one of missed
-                if (!this.isSerialInRange(this.lastSerial, bufferHead.serial, move.serial))
-                    return;
-                // Move history events should be injected in reverse order, so just put suitable event on buffer head
-                if (move.serial == ((bufferHead.serial - 1) & 0xFF)) {
-                    this.moveBuffer.unshift(move);
-                }
-            } else {
-                // This case happens when lost move is recovered using periodic 
-                // facelets state event, and being inserted into the empty buffer.
-                if (this.isSerialInRange(this.lastSerial, this.serial, move.serial, false, true)) {
-                    this.moveBuffer.unshift(move);
-                }
-            }
-        }
-    }
-
-    /** Used in response to periodic facelets event to check if any moves missed */
-    private async checkIfMoveMissed(conn: GanCubeRawConnection) {
-        let diff = (this.serial - this.lastSerial) & 0xFF;
-        if (diff > 0) {
-            if (this.serial != 0) { // Constraint to avoid firmware bug with facelets state event at 255 move counter
-                let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
-                let startSerial = bufferHead ? bufferHead.serial : (this.serial + 1) & 0xFF;
-                await this.requestMoveHistory(conn, startSerial, diff + 1);
-            }
-        }
-    }
-
     async handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]> {
 
         var timestamp = now();
@@ -934,7 +863,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
         if (eventType == 0x01) { // MOVE
 
-            if (this.lastSerial != -1) { // Accept move events only after first facelets state event received
+            if (this.history.lastSerial != -1) { // Accept move events only after first facelets state event received
 
                 // One BLE notification may contain multiple MOVE chunks (72 bits each). Only reading the first
                 // chunk drops later face turns (common on slice moves) until MOVE_HISTORY catches up
@@ -943,7 +872,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                 while (off + 72 <= msgBitLen && msg.getBitWord(off, 8) === 0x01) {
                     let cubeTimestamp = msg.getBitWord(off + 16, 32, true);
                     let serial = msg.getBitWord(off + 48, 16, true);
-                    this.serial = serial;
+                    this.history.serial = serial;
 
                     let direction = msg.getBitWord(off + 64, 2);
                     let face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(off + 66, 6));
@@ -953,7 +882,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                         break;
                     }
 
-                    this.moveBuffer.push({
+                    this.history.push({
                         type: "MOVE",
                         serial: serial,
                         timestamp: timestamp,
@@ -963,12 +892,12 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                         direction: direction,
                         move: move.trim()
                     });
-                    this.lastLocalTimestamp = timestamp;
+                    this.history.lastLocalTimestamp = timestamp;
                     off += 72;
                 }
 
                 // evict move events from FIFO buffer
-                cubeEvents = await this.evictMoveBuffer(conn);
+                cubeEvents = await this.history.evictMoveBuffer(conn);
 
             }
 
@@ -983,7 +912,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                 let direction = msg.getBitWord(27 + 4 * i, 1);
                 if (face >= 0) {
                     let move = "URFDLB".charAt(face) + " '".charAt(direction);
-                    this.injectMissedMoveToBuffer({
+                    this.history.injectMissedMoveToBuffer({
                         type: "MOVE",
                         serial: (startSerial - i) & 0xFF,
                         timestamp: timestamp,
@@ -997,22 +926,22 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
             }
 
             // evict move events from FIFO buffer
-            cubeEvents = await this.evictMoveBuffer();
+            cubeEvents = await this.history.evictMoveBuffer();
 
         } else if (eventType == 0xED) { // FACELETS
 
-            let serial = this.serial = msg.getBitWord(16, 16, true);
+            let serial = this.history.serial = msg.getBitWord(16, 16, true);
 
             // Also check and recovery missed moves using periodic facelets event sent by cube
-            if (this.lastSerial != -1) {
+            if (this.history.lastSerial != -1) {
                 // Debounce the facelet event if there are active cube moves
-                if (this.lastLocalTimestamp != null && (timestamp - this.lastLocalTimestamp) > 500) {
-                    await this.checkIfMoveMissed(conn);
+                if (this.history.lastLocalTimestamp != null && (timestamp - this.history.lastLocalTimestamp) > 500) {
+                    await this.history.checkIfMoveMissed(conn);
                 }
             }
 
-            if (this.lastSerial == -1)
-                this.lastSerial = serial;
+            if (this.history.lastSerial == -1)
+                this.history.lastSerial = serial;
 
             const state = decodeCornersEdges(msg, { cp: 32, co: 53, ep: 69, eo: 113 });
 
