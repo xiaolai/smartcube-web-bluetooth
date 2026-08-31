@@ -1,4 +1,5 @@
 import type { SmartCubeEvent, SmartCubeCommand, SmartCubeConnection } from '../../smartcube/types';
+import { moveDirectionFromNotation } from '../../smartcube/cubie-cube';
 
 export type NormalizedEvent =
   | { type: 'MOVE'; face: number; direction: number; move: string; cubeTimestamp: number | null }
@@ -61,6 +62,22 @@ export function lastFacelets(events: SmartCubeEvent[]): string | null {
     if (e.type === 'FACELETS') return (e as any).facelets as string;
   }
   return null;
+}
+
+/**
+ * Every MOVE must carry the `face` and `direction` implied by its own notation
+ * (0 = CW, 1 = CCW, 2 = half turn). Returns one description per violation.
+ */
+export function moveDirectionMismatches(events: SmartCubeEvent[]): string[] {
+  const out: string[] = [];
+  events.forEach((e, i) => {
+    if (e.type !== 'MOVE') return;
+    const face = 'URFDLB'.indexOf(e.move.charAt(0));
+    const direction = moveDirectionFromNotation(e.move);
+    if (e.face !== face) out.push(`#${i} ${e.move}: face ${e.face}, expected ${face}`);
+    if (e.direction !== direction) out.push(`#${i} ${e.move}: direction ${e.direction}, expected ${direction}`);
+  });
+  return out;
 }
 
 export function fixtureExpectedMoves(fixture: { events: { event: any }[] }, limit?: number): string[] {

@@ -3,10 +3,15 @@ import { Observable } from 'rxjs';
 
 type SmartCubeMoveEvent = {
     type: "MOVE";
+    /** Turned face: 0 = U, 1 = R, 2 = F, 3 = D, 4 = L, 5 = B */
     face: number;
+    /** Turn direction: 0 = clockwise, 1 = counter-clockwise, 2 = half turn (only cubes that report a 180° turn as one move) */
     direction: number;
+    /** Move in standard notation, e.g. "R", "U'", "F2" */
     move: string;
+    /** Host clock at receipt (same clock as `timestamp`); null for moves recovered from history */
     localTimestamp: number | null;
+    /** Cube-internal clock in milliseconds where the cube reports one, otherwise null; not comparable across brands (see cubeTimestampLinearFit) */
     cubeTimestamp: number | null;
 };
 
@@ -52,7 +57,10 @@ type SmartCubeEventMessage =
     | SmartCubeHardwareEvent
     | SmartCubeDisconnectEvent;
 
-type SmartCubeEvent = { timestamp: number } & SmartCubeEventMessage;
+type SmartCubeEvent = {
+    /** Host clock at emission, in milliseconds (performance.now()-based where available; not an epoch time) */
+    timestamp: number;
+} & SmartCubeEventMessage;
 
 type SmartCubeCommand =
     | { type: "REQUEST_FACELETS" }

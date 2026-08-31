@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
 import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
-import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moves } from '../../test/helpers/events';
+import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { giikerProtocol } from './giiker';
 
 describe('giikerProtocol.connect (capture replay)', () => {
@@ -32,6 +32,7 @@ describe('giikerProtocol.connect (capture replay)', () => {
     const expectedLast = fixtureExpectedLastFacelets(fixture);
     expect(moves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLast);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     await conn.disconnect();
   }, 20_000);

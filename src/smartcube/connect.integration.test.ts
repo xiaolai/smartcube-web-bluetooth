@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { connectSmartCube, type SmartCubeEvent } from './index';
 import { FIXTURES, loadFixture } from '../test/fixtures';
 import { installMockBluetoothFromFixture } from '../test/bluetooth-mock';
+import { moveDirectionMismatches } from '../test/helpers/events';
 import { ganProtocol } from './protocols/gan';
 import { qiyiProtocol } from './protocols/qiyi';
 
@@ -83,6 +84,7 @@ describe('connectSmartCube (capture replay)', () => {
       sub.unsubscribe();
 
       expect(lastFacelets(events)).toBe(expectedLastFacelets);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
       const disconnectEvents: SmartCubeEvent[] = [];
       const sub2 = conn.events$.subscribe({ next: (e) => disconnectEvents.push(e) });
@@ -146,6 +148,7 @@ describe('protocol.connect (capture replay)', () => {
     await drainP;
     expect(collectMoves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLastFacelets);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     await conn.disconnect();
   }, 20_000);
@@ -202,6 +205,7 @@ describe('protocol.connect (capture replay)', () => {
 
     expect(collectMoves(events).slice(0, expectedMoves.length)).toEqual(expectedMoves);
     expect(lastFacelets(events)).toBe(expectedLastFacelets);
+    expect(moveDirectionMismatches(events)).toEqual([]);
 
     await conn.disconnect();
   }, 20_000);
