@@ -146,6 +146,11 @@ class GiikerConnection implements SmartCubeConnection {
             this.pendingValues.push(new DataView(b));
             return;
         }
+        this.handleStateValue(value);
+    };
+
+    /** Decode one state frame and emit the derived MOVE (if any) plus FACELETS. */
+    private handleStateValue(value: DataView): void {
         const timestamp = now();
         const { facelet, prevMoves } = parseState(value);
 
@@ -171,7 +176,7 @@ class GiikerConnection implements SmartCubeConnection {
             type: "FACELETS",
             facelets: facelet
         });
-    };
+    }
 
     private emitHardwareEvent(): void {
         this.events$.next({
@@ -273,29 +278,7 @@ class GiikerConnection implements SmartCubeConnection {
         const queued = this.pendingValues;
         this.pendingValues = [];
         for (const dv of queued) {
-            // Reuse the same logic path.
-            const ts2 = now();
-            const { facelet: f2, prevMoves: m2 } = parseState(dv);
-            if (this.lastFacelet && this.lastFacelet !== f2 && m2.length > 0) {
-                const moveStr = m2[0].trim();
-                const face = "URFDLB".indexOf(moveStr[0]);
-                const direction = moveDirectionFromNotation(moveStr);
-                this.events$.next({
-                    timestamp: ts2,
-                    type: "MOVE",
-                    face,
-                    direction,
-                    move: moveStr,
-                    localTimestamp: ts2,
-                    cubeTimestamp: null
-                });
-            }
-            this.lastFacelet = f2;
-            this.events$.next({
-                timestamp: ts2,
-                type: "FACELETS",
-                facelets: f2
-            });
+            this.handleStateValue(dv);
         }
     }
 
