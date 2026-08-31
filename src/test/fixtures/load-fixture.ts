@@ -20,12 +20,15 @@ export async function loadFixture(filename: string): Promise<FixtureSession> {
 
 export const FIXTURES = {
   ganGen2_small: 'fixture_GANicXXX_gan-gen2_2026-04-14T11-39-47.json',
+  ganGen2_gan12ui: 'fixture_GAN12ui--B3C_gan-gen2_2026-04-14T11-40-51.json',
+  ganGen2_gan12uiFreePlay: 'fixture_GAN12uiFp-753_gan-gen2_2026-04-14T11-34-36.json',
   giiker: 'fixture_Giiker_i3SE_giiker_2026-04-14T11-42-39.json',
   gocube: 'fixture_GoCube_gocube_2026-04-14T11-43-52.json',
   rubiksConnected: 'fixture_Rubiks_Connected_gocube_2026-04-14T11-50-17.json',
   moyu32_my32: 'fixture_WCU_MY32_A388_moyu32_2026-04-15T06-43-44.json',
   moyu32_my33_noGyro: 'fixture_WCU_MY33_AF9E_moyu32_2026-04-14T11-53-23.json',
   qiyi: 'fixture_QY-QYSC-S-A0E6________qiyi_2026-04-14T11-37-22.json',
+  qiyi_xmdTornadoV4: 'fixture_XMD-TornadoV4-i-034C__qiyi_2026-04-14T11-46-25.json',
   ganGen4: 'fixture_GANi4_A26E_gan-gen4_2026-04-14T11-38-02.json',
 } as const;
 

@@ -1,0 +1,617 @@
+{
+  "fixture": "fixture_Rubiks_Connected_gocube_2026-04-14T11-50-17.json",
+  "protocol": "gocube",
+  "deviceName": "Rubiks Connected",
+  "capabilitiesAtConnect": {
+    "gyroscope": false,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": true
+  },
+  "capabilitiesAfterDrain": {
+    "gyroscope": false,
+    "battery": true,
+    "facelets": true,
+    "hardware": true,
+    "reset": true
+  },
+  "counts": {
+    "BATTERY": 1,
+    "MOVE": 40,
+    "FACELETS": 43,
+    "DISCONNECT": 1
+  },
+  "gyro": {
+    "count": 0,
+    "checksum": "811c9dc5",
+    "first": [],
+    "last": []
+  },
+  "events": [
+    {
+      "i": 0,
+      "type": "BATTERY",
+      "batteryLevel": 100
+    },
+    {
+      "i": 1,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 2,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUFRRRRRRRRRFFDFFDFFDDDBDDBDDBLLLLLLLLLUBBUBBUBB"
+    },
+    {
+      "i": 3,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUFRRRRRRRRRFFDFFDFFDDDBDDBDDBLLLLLLLLLUBBUBBUBB"
+    },
+    {
+      "i": 4,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 5,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFFUBBRRRRRRRRRFFDFFDDDBDDBDDBFFDLLLLLLLLLUBBUBB"
+    },
+    {
+      "i": 6,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 7,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFLBRRBRRURRRRUFFUFFFDDRDDDDDDFFDLLLLLLBLLBBBBBB"
+    },
+    {
+      "i": 8,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 9,
+      "type": "FACELETS",
+      "facelets": "UULUUFUUFRRUBRRURRFFDFFUFFFDDRDDDDDDBLLLLLLLLBRRBBBBBB"
+    },
+    {
+      "i": 10,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 11,
+      "type": "FACELETS",
+      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDFBLLLLLLLLDRRDBBRBB"
+    },
+    {
+      "i": 12,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 13,
+      "type": "FACELETS",
+      "facelets": "UUBUUBLLLURRURRBBUFFFFFFFFLRRUDDUDDFBLDLLDLLDDRRDBBRBB"
+    },
+    {
+      "i": 14,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 15,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFFRRRDDDDDDBLDLLDLLDLRRBBBBBB"
+    },
+    {
+      "i": 16,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 17,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLFUBBRRURRUFFRFFDFFDRRBDDBDDLBLDLLDLLDLRRFBBFBB"
+    },
+    {
+      "i": 18,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 19,
+      "type": "FACELETS",
+      "facelets": "UUFUULUULFFRRRURRUBLDFFDFFDRRBDDBDDLLRRLLDLLDUBBFBBFBB"
+    },
+    {
+      "i": 20,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 21,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUURUUFRRFRRBLFFFLFFLRRDDDDDDDLRRLLDLLDLBBBBBBBB"
+    },
+    {
+      "i": 22,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 23,
+      "type": "FACELETS",
+      "facelets": "FFUUUUUUUBLFFRRFRRLRRFFLFFLRRDDDDDDDLBBLLDLLDRUUBBBBBB"
+    },
+    {
+      "i": 24,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 25,
+      "type": "FACELETS",
+      "facelets": "FFRUULUULFFBRRLRRFLRDFFDFFDRRBDDBDDRLBBLLDLLDUUUUBBUBB"
+    },
+    {
+      "i": 26,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 27,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLRUUURRLRRFFFBFFDFFDRRBDDBDDRLRDLLDLLDLBBUBBUBB"
+    },
+    {
+      "i": 28,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 29,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLLULFURRURRFFFFFFFFRRRBDDDDDDLRDLLDLLDRBBBBBBBB"
+    },
+    {
+      "i": 30,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 31,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUUBLFRRRRRRFFRFFFFFFDDDDDDDDDLRLLLLLLLRBBBBBBBB"
+    },
+    {
+      "i": 32,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 33,
+      "type": "FACELETS",
+      "facelets": "UURUUFUUFRRBRRLRRFFFDFFDFFDDDBDDBDDRLRLLLLLLLUBBUBBUBB"
+    },
+    {
+      "i": 34,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 35,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUUBLFRRRRRRFFRFFFFFFDDDDDDDDDLRLLLLLLLRBBBBBBBB"
+    },
+    {
+      "i": 36,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 37,
+      "type": "FACELETS",
+      "facelets": "UURUUFUUFRRBRRLRRFFFDFFDFFDDDBDDBDDRLRLLLLLLLUBBUBBUBB"
+    },
+    {
+      "i": 38,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 39,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFRUBBRRLRRFRRBFFDFFDDDBDDBDDRFFDLLLLLLLRLUBBUBB"
+    },
+    {
+      "i": 40,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 41,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFLBLFBRRURRRRUFFUFFRDDBDDDDDDFFDLLLLLLRRLBBBBBB"
+    },
+    {
+      "i": 42,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 43,
+      "type": "FACELETS",
+      "facelets": "UULUUFUUFRRUBRRURRFFDFFUFFRDDBDDDDDDRRLLLLLLLBLFBBBBBB"
+    },
+    {
+      "i": 44,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 45,
+      "type": "FACELETS",
+      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDRRRLLLLLLLDLFDBBBBB"
+    },
+    {
+      "i": 46,
+      "type": "FACELETS",
+      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDRRRLLLLLLLDLFDBBBBB"
+    },
+    {
+      "i": 47,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 48,
+      "type": "FACELETS",
+      "facelets": "UUBUUBLLLURRURRBBUFFFFFFFFLRRUDDUDDRRRDLLDLLDDLFDBBBBB"
+    },
+    {
+      "i": 49,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 50,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFRRRBDDDDDDRRDLLDLLDLLFBBBBBB"
+    },
+    {
+      "i": 51,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 52,
+      "type": "FACELETS",
+      "facelets": "UUFUUFBBUBUURRRRRRUURFFFFFFDDDDDDDDDRRLLLLLLLLLFBBBBBB"
+    },
+    {
+      "i": 53,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 54,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFRRRBDDDDDDRRDLLDLLDLLFBBBBBB"
+    },
+    {
+      "i": 55,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 56,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLRUBBRRURRUFFBFFDFFDRRBDDBDDLRRDLLDLLDLLFFBBFBB"
+    },
+    {
+      "i": 57,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 58,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFRRRBDDDDDDRRDLLDLLDLLFBBBBBB"
+    },
+    {
+      "i": 59,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 60,
+      "type": "FACELETS",
+      "facelets": "UUFUUFBBUBUURRRRRRUURFFFFFFDDDDDDDDDRRLLLLLLLLLFBBBBBB"
+    },
+    {
+      "i": 61,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 62,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFRRRBDDDDDDRRDLLDLLDLLFBBBBBB"
+    },
+    {
+      "i": 63,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 64,
+      "type": "FACELETS",
+      "facelets": "UUFUUFBBUBUURRRRRRUURFFFFFFDDDDDDDDDRRLLLLLLLLLFBBBBBB"
+    },
+    {
+      "i": 65,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 0,
+      "move": "F",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 66,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLLBUUBRRURRFFUFFUFFRRRBDDDDDDRRDLLDLLDLLFBBBBBB"
+    },
+    {
+      "i": 67,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 68,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLRUBBRRURRUFFBFFDFFDRRBDDBDDLRRDLLDLLDLLFFBBFBB"
+    },
+    {
+      "i": 69,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 70,
+      "type": "FACELETS",
+      "facelets": "UURUULUULFFBRRURRURRDFFDFFDRRBDDBDDLLLFLLDLLDUBBFBBFBB"
+    },
+    {
+      "i": 71,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 72,
+      "type": "FACELETS",
+      "facelets": "UUFUUFUUUBUUFRRFRRRRRFFLFFLRRDDDDDDDLLFLLDLLDLBBBBBBBB"
+    },
+    {
+      "i": 73,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 1,
+      "move": "U'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 74,
+      "type": "FACELETS",
+      "facelets": "FFUUUUUUURRRFRRFRRLLFFFLFFLRRDDDDDDDLBBLLDLLDBUUBBBBBB"
+    },
+    {
+      "i": 75,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 0,
+      "move": "R",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 76,
+      "type": "FACELETS",
+      "facelets": "FFFUULUULFFRRRRRRRLLDFFDFFDRRBDDBDDBLBBLLDLLDUUUUBBUBB"
+    },
+    {
+      "i": 77,
+      "type": "MOVE",
+      "face": 0,
+      "direction": 0,
+      "move": "U",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 78,
+      "type": "FACELETS",
+      "facelets": "UUFUUFLLFUUURRRRRRFFRFFDFFDRRBDDBDDBLLDLLDLLDLBBUBBUBB"
+    },
+    {
+      "i": 79,
+      "type": "MOVE",
+      "face": 1,
+      "direction": 1,
+      "move": "R'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 80,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLLURRURRURRFFFFFFFFFRRRDDDDDDLLDLLDLLDBBBBBBBBB"
+    },
+    {
+      "i": 81,
+      "type": "MOVE",
+      "face": 2,
+      "direction": 1,
+      "move": "F'",
+      "cubeTimestampRel": null,
+      "hasLocalTimestamp": true
+    },
+    {
+      "i": 82,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 83,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 84,
+      "type": "DISCONNECT"
+    }
+  ]
+}
