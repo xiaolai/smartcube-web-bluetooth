@@ -28,10 +28,10 @@ describe('deriveGen1Key', () => {
     ]);
   });
 
-  it('falls back to table 0 for an unknown firmware major', () => {
-    expect(deriveGen1Key(0x01ff08, hw([1, 2, 3, 4, 5, 6]))).toEqual(
-      deriveGen1Key(0x010008, hw([1, 2, 3, 4, 5, 6]))
-    );
+  it('rejects an unknown firmware major instead of guessing table 0', () => {
+    // A wrong key would silently decrypt garbage; failing loud beats a guess.
+    const hw = new DataView(Uint8Array.from([1, 2, 3, 4, 5, 6]).buffer);
+    expect(deriveGen1Key(0x99 << 8, hw)).toBeNull();
   });
 
   it('returns null when hardware data is shorter than 6 bytes', () => {
