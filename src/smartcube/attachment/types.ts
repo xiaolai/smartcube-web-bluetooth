@@ -31,4 +31,20 @@ export interface ConnectSmartCubeOptions {
      * derived from the device name (slow; default false).
      */
     enableAddressSearch?: boolean;
+    /**
+     * The Web Bluetooth implementation to use. Defaults to `navigator.bluetooth`.
+     *
+     * The library reached for that global directly, which quietly made the browser a requirement
+     * rather than a default: every WebView that ships without Web Bluetooth — WKWebView on macOS
+     * and iOS, Android WebView, WebView2, WebKitGTK — could not run this library at all, however
+     * capable its host was of reaching the radio. A Tauri or Electron app with native BLE had no
+     * way in, and the only workaround was to assign to `navigator.bluetooth` from outside, which
+     * is a global mutation done to a library that never asked for one.
+     *
+     * Only `requestDevice` is used; everything after it flows through the returned device. So an
+     * adapter needs to satisfy far less than the full Web Bluetooth surface.
+     */
+    bluetooth?: import('../../bluetooth-source').BluetoothLike;
 }
+
+export type { BluetoothLike } from '../../bluetooth-source';
