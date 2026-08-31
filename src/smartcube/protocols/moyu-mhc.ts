@@ -1,6 +1,7 @@
 
-import { Subject } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { Observable } from 'rxjs';
+import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
+import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
@@ -38,8 +39,15 @@ class MoyuMhcConnection implements SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo = MOYU_MHC_PROTOCOL;
-    readonly capabilities: SmartCubeCapabilities;
-    events$: Subject<SmartCubeEvent>;
+    private readonly bus = new SmartCubeEventBus({
+        gyroscope: false,
+        battery: false,
+        facelets: false,
+        hardware: false,
+        reset: false,
+    });
+    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
 
     private device: BluetoothDevice;
     private writeChrct: BluetoothRemoteGATTCharacteristic | null = null;
@@ -50,22 +58,22 @@ class MoyuMhcConnection implements SmartCubeConnection {
     private faceStatus = [0, 0, 0, 0, 0, 0];
     private curCubie = new CubieCube();
     private prevCubie = new CubieCube();
-    private lastBatteryLevel: number | null = null;
     private batteryInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(device: BluetoothDevice) {
         this.device = device;
         this.deviceName = device.name || 'MHC';
         this.deviceMAC = '';
-        this.events$ = new Subject<SmartCubeEvent>();
-        this.capabilities = {
-            gyroscope: false,
-            battery: false,
-            facelets: false,
-            hardware: false,
-            reset: false,
-        };
     }
+
+    get capabilities(): SmartCubeCapabilities {
+        return this.bus.capabilities as SmartCubeCapabilities;
+    }
+
+    getSnapshot(): SmartCubeSnapshot {
+        return this.bus.getSnapshot();
+    }
+
 
     private onTurnEvent = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
@@ -93,7 +101,7 @@ class MoyuMhcConnection implements SmartCubeConnection {
             z: fz,
         });
         const timestamp = now();
-        this.events$.next({
+        this.bus.emit({
             timestamp,
             type: 'GYRO',
             quaternion,
@@ -158,7 +166,7 @@ class MoyuMhcConnection implements SmartCubeConnection {
             CubieCube.CubeMult(this.prevCubie, CubieCube.moveCube[m]!, this.curCubie);
             const faceletStr = this.curCubie.toFaceCube();
 
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "MOVE",
                 face: axis,
@@ -168,7 +176,7 @@ class MoyuMhcConnection implements SmartCubeConnection {
                 cubeTimestamp: ts
             });
 
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "FACELETS",
                 facelets: faceletStr
@@ -180,29 +188,13 @@ class MoyuMhcConnection implements SmartCubeConnection {
         }
     }
 
-    private emitBatteryLevel(rawLevel: number, timestamp = now(), forceEmission = false): void {
-        if (!Number.isFinite(rawLevel)) {
-            return;
-        }
-        const batteryLevel = Math.min(100, Math.max(0, Math.round(rawLevel)));
-        if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
-            return;
-        }
-        this.lastBatteryLevel = batteryLevel;
-        this.events$.next({
-            timestamp,
-            type: 'BATTERY',
-            batteryLevel,
-        });
-    }
-
     private async pollBattery(): Promise<void> {
         if (!this.v1) {
             return;
         }
         try {
             const b = await this.v1.getBatteryInfo();
-            this.emitBatteryLevel(b.value.percentage);
+            this.bus.emitBattery(b.value.percentage);
         } catch {
             /* ignore failed optional commands */
         }
@@ -210,22 +202,24 @@ class MoyuMhcConnection implements SmartCubeConnection {
 
     private onDisconnect = (): void => {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.lastBatteryLevel = null;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
         }
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
     };
 
     private updateCapabilities(): void {
         const hasV1 = this.v1 !== null;
-        this.capabilities.gyroscope = this.gyroChrct !== null;
-        this.capabilities.battery = hasV1;
-        this.capabilities.facelets = hasV1;
-        this.capabilities.hardware = hasV1;
-        this.capabilities.reset = hasV1;
+        this.bus.setCapabilities({
+            gyroscope: this.gyroChrct !== null,
+            battery: hasV1,
+            facelets: hasV1,
+            hardware: hasV1,
+            reset: hasV1,
+        });
     }
 
     async init(): Promise<void> {
@@ -269,20 +263,20 @@ class MoyuMhcConnection implements SmartCubeConnection {
                 const st = await this.v1.getCubeState();
                 this.applyCubeStateFromDevice(st.stickers, st.angles);
                 const facelets = this.prevCubie.toFaceCube();
-                this.events$.next({
+                this.bus.emit({
                     timestamp: now(),
                     type: 'FACELETS',
                     facelets,
                 });
             } catch {
-                this.events$.next({
+                this.bus.emit({
                     timestamp: now(),
                     type: 'FACELETS',
                     facelets: SOLVED_FACELET,
                 });
             }
         } else {
-            this.events$.next({
+            this.bus.emit({
                 timestamp: now(),
                 type: 'FACELETS',
                 facelets: SOLVED_FACELET,
@@ -298,17 +292,18 @@ class MoyuMhcConnection implements SmartCubeConnection {
             if (command.type === 'REQUEST_FACELETS') {
                 const st = await this.v1.getCubeState();
                 this.applyCubeStateFromDevice(st.stickers, st.angles);
-                this.events$.next({
+                this.bus.emit({
                     timestamp: ts,
                     type: 'FACELETS',
                     facelets: this.prevCubie.toFaceCube(),
                 });
             } else if (command.type === 'REQUEST_BATTERY') {
                 const b = await this.v1.getBatteryInfo();
-                this.emitBatteryLevel(b.value.percentage, ts, true);
+                this.bus.forceNextBattery();
+                this.bus.emitBattery(b.value.percentage, ts);
             } else if (command.type === 'REQUEST_HARDWARE') {
                 const h = await this.v1.getHardwareInfo();
-                this.events$.next({
+                this.bus.emit({
                     timestamp: ts,
                     type: 'HARDWARE',
                     softwareVersion: `${h.major}.${h.minor}.${h.patch}`,
@@ -320,7 +315,7 @@ class MoyuMhcConnection implements SmartCubeConnection {
                 this.faceStatus = [0, 0, 0, 0, 0, 0];
                 this.curCubie = new CubieCube();
                 this.prevCubie = new CubieCube();
-                this.events$.next({
+                this.bus.emit({
                     timestamp: ts,
                     type: 'FACELETS',
                     facelets: SOLVED_FACELET,
@@ -344,7 +339,7 @@ class MoyuMhcConnection implements SmartCubeConnection {
             this.gyroChrct.removeEventListener('characteristicvaluechanged', this.onGyroEvent);
             await this.gyroChrct.stopNotifications().catch(() => {});
         }
-        this.lastBatteryLevel = null;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
@@ -355,8 +350,8 @@ class MoyuMhcConnection implements SmartCubeConnection {
         this.writeChrct = null;
         this.v1 = null;
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }

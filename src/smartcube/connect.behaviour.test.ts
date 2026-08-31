@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import { connectSmartCube } from './connect';
 import { registerProtocol, getRegisteredProtocols, type SmartCubeProtocol } from './protocol';
-import type { SmartCubeConnection, SmartCubeEvent } from './types';
+import type { SmartCubeConnection, SmartCubeEvent, SmartCubeSnapshot } from './types';
 
 function swapRegistry(): SmartCubeProtocol[] {
   const reg = getRegisteredProtocols();
@@ -25,6 +25,8 @@ function dummyConnection(): SmartCubeConnection {
     protocol: { id: 'dummy', name: 'Dummy' },
     capabilities: { gyroscope: false, battery: false, facelets: false, hardware: false, reset: false },
     events$,
+    state$: new Subject<SmartCubeSnapshot>(),
+    getSnapshot: () => ({ revision: 0, connected: true, facelets: null, battery: null, hardware: null, capabilities: { gyroscope: false, battery: false, facelets: false, hardware: false, reset: false } }),
     sendCommand: async () => {},
     disconnect: async () => {
       events$.complete();

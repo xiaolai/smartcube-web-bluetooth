@@ -20,7 +20,8 @@ export type {
     SmartCubeDisconnectEvent,
     SmartCubeCommand,
     SmartCubeCapabilities,
-    SmartCubeConnection
+    SmartCubeConnection,
+    SmartCubeSnapshot
 } from './types';
 
 export { connectSmartCube } from './connect';

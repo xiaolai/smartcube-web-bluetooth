@@ -1,6 +1,7 @@
 
-import { Subject } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { Observable } from 'rxjs';
+import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
+import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
@@ -86,8 +87,9 @@ class GoCubeConnection implements SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo = GOCUBE_PROTOCOL;
-    readonly capabilities: SmartCubeCapabilities;
-    events$: Subject<SmartCubeEvent>;
+    private readonly bus: SmartCubeEventBus;
+    readonly events$: Observable<SmartCubeEvent>;
+    readonly state$: Observable<SmartCubeSnapshot>;
 
     private device: BluetoothDevice;
     private readChrct: BluetoothRemoteGATTCharacteristic | null = null;
@@ -95,8 +97,6 @@ class GoCubeConnection implements SmartCubeConnection {
     private curCubie = new CubieCube();
     private prevCubie = new CubieCube();
     private moveCntFree = 100;
-    private lastBatteryLevel: number | null = null;
-    private forceNextBatteryEmission = false;
     private batteryInterval: ReturnType<typeof setInterval> | null = null;
     /** Last decoded move (axis + direction bit) for short type-1 frames that omit a full pair of bytes. */
     private lastMoveMeta: { axis: number; dirBit: number } | null = null;
@@ -108,15 +108,25 @@ class GoCubeConnection implements SmartCubeConnection {
         this.device = device;
         this.deviceName = name;
         this.deviceMAC = '';
-        this.capabilities = {
+        this.bus = new SmartCubeEventBus({
             gyroscope: gyroSupported,
             battery: true,
             facelets: true,
             hardware: true,
             reset: true
-        };
-        this.events$ = new Subject<SmartCubeEvent>();
+        });
+        this.events$ = this.bus.events$;
+        this.state$ = this.bus.state$;
     }
+
+    get capabilities(): SmartCubeCapabilities {
+        return this.bus.capabilities as SmartCubeCapabilities;
+    }
+
+    getSnapshot(): SmartCubeSnapshot {
+        return this.bus.getSnapshot();
+    }
+
 
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
@@ -132,7 +142,7 @@ class GoCubeConnection implements SmartCubeConnection {
         CubieCube.CubeMult(this.prevCubie, CubieCube.moveCube[m], this.curCubie);
         const facelet = this.curCubie.toFaceCube();
 
-        this.events$.next({
+        this.bus.emit({
             timestamp,
             type: "MOVE",
             face: axis,
@@ -142,7 +152,7 @@ class GoCubeConnection implements SmartCubeConnection {
             cubeTimestamp: null
         });
 
-        this.events$.next({
+        this.bus.emit({
             timestamp,
             type: "FACELETS",
             facelets: facelet
@@ -157,24 +167,6 @@ class GoCubeConnection implements SmartCubeConnection {
             this.writeChrct &&
                 writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_STATE]).buffer).catch(() => {});
         }
-    }
-
-    private emitBatteryLevel(rawLevel: number, timestamp = now()): void {
-        if (!Number.isFinite(rawLevel)) {
-            return;
-        }
-        const batteryLevel = Math.min(100, Math.max(0, Math.round(rawLevel)));
-        const forceEmission = this.forceNextBatteryEmission;
-        this.forceNextBatteryEmission = false;
-        if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
-            return;
-        }
-        this.lastBatteryLevel = batteryLevel;
-        this.events$.next({
-            timestamp,
-            type: 'BATTERY',
-            batteryLevel,
-        });
     }
 
     private pollBattery = (): void => {
@@ -212,7 +204,7 @@ class GoCubeConnection implements SmartCubeConnection {
             if (!q) {
                 return;
             }
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: 'GYRO',
                 quaternion: q
@@ -264,18 +256,18 @@ class GoCubeConnection implements SmartCubeConnection {
                 done();
                 return;
             }
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "FACELETS",
                 facelets: this.prevCubie.toFaceCube()
             });
         } else if (msgType === 5) { // Battery
-            this.emitBatteryLevel(value.getUint8(3), timestamp);
+            this.bus.emitBattery(value.getUint8(3), timestamp);
         }
     }
 
     private emitHardwareEvent(): void {
-        this.events$.next({
+        this.bus.emit({
             timestamp: now(),
             type: "HARDWARE",
             hardwareName: this.deviceName,
@@ -285,14 +277,13 @@ class GoCubeConnection implements SmartCubeConnection {
 
     private onDisconnect = (): void => {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
         }
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
     };
 
     async init(): Promise<void> {
@@ -329,7 +320,7 @@ class GoCubeConnection implements SmartCubeConnection {
         this.resolveInitialState = undefined;
 
         queueMicrotask(() => {
-            this.events$.next({
+            this.bus.emit({
                 timestamp: now(),
                 type: "FACELETS",
                 facelets: this.prevCubie.toFaceCube()
@@ -342,11 +333,11 @@ class GoCubeConnection implements SmartCubeConnection {
             return;
         }
         if (command.type === "REQUEST_BATTERY") {
-            this.forceNextBatteryEmission = true;
+            this.bus.forceNextBattery();
             await writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_BATTERY]).buffer);
         } else if (command.type === "REQUEST_FACELETS") {
             const ts = now();
-            this.events$.next({
+            this.bus.emit({
                 timestamp: ts,
                 type: "FACELETS",
                 facelets: this.prevCubie.toFaceCube()
@@ -360,9 +351,8 @@ class GoCubeConnection implements SmartCubeConnection {
             this.prevCubie = new CubieCube();
             this.lastMoveMeta = null;
             this.moveCntFree = 100;
-            this.lastBatteryLevel = null;
-            this.forceNextBatteryEmission = false;
-            this.events$.next({
+            this.bus.resetBatteryDedupe();
+            this.bus.emit({
                 timestamp: now(),
                 type: "FACELETS",
                 facelets: SOLVED_FACELET
@@ -376,16 +366,15 @@ class GoCubeConnection implements SmartCubeConnection {
             await this.readChrct.stopNotifications().catch(() => {});
             this.readChrct = null;
         }
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
         }
         this.writeChrct = null;
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }

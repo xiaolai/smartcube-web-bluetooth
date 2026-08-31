@@ -76,12 +76,34 @@ interface SmartCubeCapabilities {
     reset: boolean;
 }
 
+/**
+ * Immutable, revisioned view of the connection's cacheable state. The events stream is
+ * live-only (a Subject does not replay), so state observed before a consumer subscribes
+ * is available here instead of being lost.
+ */
+type SmartCubeSnapshot = {
+    /** Strictly increasing with every snapshot change on this connection */
+    readonly revision: number;
+    /** False once the connection disconnected */
+    readonly connected: boolean;
+    readonly facelets: { readonly value: string; readonly timestamp: number } | null;
+    readonly battery: { readonly value: number; readonly timestamp: number } | null;
+    readonly hardware: (Readonly<Omit<SmartCubeHardwareEvent, 'type'>> & { readonly timestamp: number }) | null;
+    readonly capabilities: Readonly<SmartCubeCapabilities>;
+};
+
 interface SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo;
+    /** Current capabilities; may change after connect (e.g. gyroscope support is detected lazily). */
     readonly capabilities: SmartCubeCapabilities;
+    /** Live events only; state observed before subscription is available via state$ / getSnapshot(). */
     events$: Observable<SmartCubeEvent>;
+    /** Replays the current snapshot to each new subscriber, then every change; completes after disconnect. */
+    state$: Observable<SmartCubeSnapshot>;
+    /** The current snapshot (frozen; a new object per revision). */
+    getSnapshot(): SmartCubeSnapshot;
     sendCommand(command: SmartCubeCommand): Promise<void>;
     disconnect(): Promise<void>;
 }
@@ -101,5 +123,6 @@ export type {
     SmartCubeCommand,
     SmartCubeCapabilities,
     SmartCubeConnection,
+    SmartCubeSnapshot,
     MacAddressProvider
 };

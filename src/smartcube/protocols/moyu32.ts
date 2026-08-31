@@ -1,6 +1,7 @@
 
-import { Subject } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { Observable } from 'rxjs';
+import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
+import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { resolveCubeMac } from '../attachment/resolve-mac';
@@ -83,14 +84,15 @@ class Moyu32Connection implements SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo = MOYU32_PROTOCOL;
-    readonly capabilities: SmartCubeCapabilities = {
+    private readonly bus = new SmartCubeEventBus({
         gyroscope: false,
         battery: true,
         facelets: true,
         hardware: true,
         reset: false
-    };
-    events$: Subject<SmartCubeEvent>;
+    });
+    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
 
     private device: BluetoothDevice;
     private readChrct: BluetoothRemoteGATTCharacteristic | null = null;
@@ -103,16 +105,22 @@ class Moyu32Connection implements SmartCubeConnection {
     private deviceTimeOffset = 0;
     private moveCnt = -1;
     private prevMoveCnt = -1;
-    private lastBatteryLevel: number | null = null;
-    private forceNextBatteryEmission = false;
     private batteryInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(device: BluetoothDevice, mac: string) {
         this.device = device;
         this.deviceName = device.name || 'WCU_MY3';
         this.deviceMAC = mac;
-        this.events$ = new Subject<SmartCubeEvent>();
     }
+
+    get capabilities(): SmartCubeCapabilities {
+        return this.bus.capabilities as SmartCubeCapabilities;
+    }
+
+    getSnapshot(): SmartCubeSnapshot {
+        return this.bus.getSnapshot();
+    }
+
 
     private sendRequest(req: number[]): Promise<void> {
         if (!this.writeChrct) return Promise.resolve();
@@ -132,24 +140,6 @@ class Moyu32Connection implements SmartCubeConnection {
         this.parseData(value);
     };
 
-    private emitBatteryLevel(rawLevel: number, timestamp = now()): void {
-        if (!Number.isFinite(rawLevel)) {
-            return;
-        }
-        const batteryLevel = Math.min(100, Math.max(0, Math.round(rawLevel)));
-        const forceEmission = this.forceNextBatteryEmission;
-        this.forceNextBatteryEmission = false;
-        if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
-            return;
-        }
-        this.lastBatteryLevel = batteryLevel;
-        this.events$.next({
-            timestamp,
-            type: 'BATTERY',
-            batteryLevel,
-        });
-    }
-
     private pollBattery = (): void => {
         void this.sendSimpleRequest(164);
     };
@@ -164,7 +154,7 @@ class Moyu32Connection implements SmartCubeConnection {
 
         if ((decoded[0] | 0) === 171) {
             if (!this.capabilities.gyroscope) {
-                this.capabilities.gyroscope = true;
+                this.bus.setCapabilities({ gyroscope: true });
             }
             this.parseGyroData(decoded, timestamp);
             return;
@@ -181,7 +171,7 @@ class Moyu32Connection implements SmartCubeConnection {
             const hardwareVersion = parseInt(bits.slice(88, 96), 2) + "." + parseInt(bits.slice(96, 104), 2);
             const softwareVersion = parseInt(bits.slice(72, 80), 2) + "." + parseInt(bits.slice(80, 88), 2);
 
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "HARDWARE",
                 hardwareName: devName.trim(),
@@ -199,13 +189,13 @@ class Moyu32Connection implements SmartCubeConnection {
             this.moveCnt = seq;
             this.prevMoveCnt = seq;
 
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "FACELETS",
                 facelets: this.latestFacelet
             });
         } else if (msgType === 164) { // Battery
-            this.emitBatteryLevel(parseInt(bits.slice(8, 16), 2), timestamp);
+            this.bus.emitBattery(parseInt(bits.slice(8, 16), 2), timestamp);
         } else if (msgType === 165) { // Move
             this.moveCnt = parseInt(bits.slice(88, 96), 2);
             if (this.moveCnt === this.prevMoveCnt || this.prevMoveCnt === -1) return;
@@ -249,7 +239,7 @@ class Moyu32Connection implements SmartCubeConnection {
                     const face = Math.floor(m / 3);
                     const direction = moveDirectionFromNotation(moveNotation);
 
-                    this.events$.next({
+                    this.bus.emit({
                         timestamp,
                         type: "MOVE",
                         face,
@@ -259,7 +249,7 @@ class Moyu32Connection implements SmartCubeConnection {
                         cubeTimestamp: this.deviceTime
                     });
 
-                    this.events$.next({
+                    this.bus.emit({
                         timestamp,
                         type: "FACELETS",
                         facelets: this.curCubie.toFaceCube()
@@ -290,7 +280,7 @@ class Moyu32Connection implements SmartCubeConnection {
             z /= len;
         }
 
-        this.events$.next({
+        this.bus.emit({
             timestamp,
             type: "GYRO",
             quaternion: { x, y, z, w }
@@ -299,14 +289,13 @@ class Moyu32Connection implements SmartCubeConnection {
 
     private onDisconnect = (): void => {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
         }
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
     };
 
     async init(): Promise<void> {
@@ -351,7 +340,7 @@ class Moyu32Connection implements SmartCubeConnection {
                 await this.sendSimpleRequest(163);
                 break;
             case "REQUEST_BATTERY":
-                this.forceNextBatteryEmission = true;
+                this.bus.forceNextBattery();
                 await this.sendSimpleRequest(164);
                 break;
         }
@@ -363,16 +352,15 @@ class Moyu32Connection implements SmartCubeConnection {
             await this.readChrct.stopNotifications().catch(() => {});
             this.readChrct = null;
         }
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
         }
         this.writeChrct = null;
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }

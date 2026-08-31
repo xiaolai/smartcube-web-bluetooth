@@ -1,5 +1,6 @@
-import { Subject } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { Observable } from 'rxjs';
+import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
+import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { throwIfAborted } from '../attachment/abort';
@@ -87,12 +88,11 @@ function ganEventToSmartEvent(event: GanCubeEvent): SmartCubeEvent {
 class GanSmartCubeConnection implements SmartCubeConnection {
     private ganConn: GanCubeConnection;
     private deviceMac: string;
-    private lastBatteryLevel: number | null = null;
-    private forceNextBatteryEmission = false;
-    events$: Subject<SmartCubeEvent>;
+    private readonly bus: SmartCubeEventBus;
+    readonly events$: Observable<SmartCubeEvent>;
+    readonly state$: Observable<SmartCubeSnapshot>;
 
     readonly protocol: SmartCubeProtocolInfo;
-    readonly capabilities: SmartCubeCapabilities;
 
     constructor(ganConn: GanCubeConnection, mac: string, protocol: SmartCubeProtocolInfo, capabilities?: SmartCubeCapabilities) {
         this.ganConn = ganConn;
@@ -102,36 +102,35 @@ class GanSmartCubeConnection implements SmartCubeConnection {
         if (!capabilities && ganConn.deviceName?.startsWith('AiCube')) {
             base.gyroscope = false;
         }
-        this.capabilities = base;
-        this.events$ = new Subject<SmartCubeEvent>();
+        this.bus = new SmartCubeEventBus(base);
+        this.events$ = this.bus.events$;
+        this.state$ = this.bus.state$;
         ganConn.events$.subscribe({
             next: (event) => {
                 if (
                     event.type === 'HARDWARE' &&
                     this.protocol.id === 'gan-gen2' &&
-                    typeof event.gyroSupported === 'boolean'
+                    typeof event.gyroSupported === 'boolean' &&
+                    this.capabilities.gyroscope !== event.gyroSupported
                 ) {
-                    this.capabilities.gyroscope = event.gyroSupported;
+                    this.bus.setCapabilities({ gyroscope: event.gyroSupported });
                 }
                 if (event.type === 'BATTERY') {
-                    const batteryLevel = Math.min(100, Math.max(0, Math.round(event.batteryLevel)));
-                    const forceEmission = this.forceNextBatteryEmission;
-                    this.forceNextBatteryEmission = false;
-                    if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
-                        return;
-                    }
-                    this.lastBatteryLevel = batteryLevel;
-                    this.events$.next({
-                        timestamp: event.timestamp,
-                        type: 'BATTERY',
-                        batteryLevel,
-                    });
+                    this.bus.emitBattery(event.batteryLevel, event.timestamp);
                     return;
                 }
-                this.events$.next(ganEventToSmartEvent(event));
+                this.bus.emit(ganEventToSmartEvent(event));
             },
-            complete: () => this.events$.complete(),
+            complete: () => this.bus.complete(),
         });
+    }
+
+    get capabilities(): SmartCubeCapabilities {
+        return this.bus.capabilities as SmartCubeCapabilities;
+    }
+
+    getSnapshot(): SmartCubeSnapshot {
+        return this.bus.getSnapshot();
     }
 
     get deviceName(): string {
@@ -144,13 +143,13 @@ class GanSmartCubeConnection implements SmartCubeConnection {
 
     async sendCommand(command: SmartCubeCommand): Promise<void> {
         if (command.type === 'REQUEST_BATTERY') {
-            this.forceNextBatteryEmission = true;
+            this.bus.forceNextBattery();
         }
         return this.ganConn.sendCubeCommand(command);
     }
 
     async disconnect(): Promise<void> {
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         return this.ganConn.disconnect();
     }
 }

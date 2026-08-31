@@ -1,6 +1,7 @@
 
-import { Subject } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { Observable } from 'rxjs';
+import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
+import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
@@ -108,14 +109,15 @@ class GiikerConnection implements SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo = GIIKER_PROTOCOL;
-    readonly capabilities: SmartCubeCapabilities = {
+    private readonly bus = new SmartCubeEventBus({
         gyroscope: false,
         battery: true,
         facelets: true,
         hardware: true,
         reset: true
-    };
-    events$: Subject<SmartCubeEvent>;
+    });
+    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
 
     private device: BluetoothDevice;
     private gatt: BluetoothRemoteGATTServer | null = null;
@@ -127,15 +129,21 @@ class GiikerConnection implements SmartCubeConnection {
     private rwWriteChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private batteryInterval: ReturnType<typeof setInterval> | null = null;
     private onBatteryChanged: ((evt: Event) => void) | null = null;
-    private lastBatteryLevel: number | null = null;
-    private forceNextBatteryEmission = false;
 
     constructor(device: BluetoothDevice, name: string) {
         this.device = device;
         this.deviceName = name;
         this.deviceMAC = '';
-        this.events$ = new Subject<SmartCubeEvent>();
     }
+
+    get capabilities(): SmartCubeCapabilities {
+        return this.bus.capabilities as SmartCubeCapabilities;
+    }
+
+    getSnapshot(): SmartCubeSnapshot {
+        return this.bus.getSnapshot();
+    }
+
 
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
@@ -159,7 +167,7 @@ class GiikerConnection implements SmartCubeConnection {
             const face = "URFDLB".indexOf(moveStr[0]);
             const direction = moveDirectionFromNotation(moveStr);
 
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "MOVE",
                 face,
@@ -171,7 +179,7 @@ class GiikerConnection implements SmartCubeConnection {
         }
 
         this.lastFacelet = facelet;
-        this.events$.next({
+        this.bus.emit({
             timestamp,
             type: "FACELETS",
             facelets: facelet
@@ -179,7 +187,7 @@ class GiikerConnection implements SmartCubeConnection {
     }
 
     private emitHardwareEvent(): void {
-        this.events$.next({
+        this.bus.emit({
             timestamp: now(),
             type: "HARDWARE",
             hardwareName: this.deviceName,
@@ -187,30 +195,11 @@ class GiikerConnection implements SmartCubeConnection {
         });
     }
 
-    private emitBatteryLevel(rawLevel: number, timestamp = now()): void {
-        if (!Number.isFinite(rawLevel)) {
-            return;
-        }
-        const batteryLevel = Math.min(100, Math.max(0, Math.round(rawLevel)));
-        const forceEmission = this.forceNextBatteryEmission;
-        this.forceNextBatteryEmission = false;
-        if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
-            return;
-        }
-        this.lastBatteryLevel = batteryLevel;
-        this.events$.next({
-            timestamp,
-            type: 'BATTERY',
-            batteryLevel,
-        });
-    }
-
     private onDisconnect = (): void => {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
         this.isReady = false;
         this.pendingValues = [];
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
@@ -219,8 +208,8 @@ class GiikerConnection implements SmartCubeConnection {
             this.rwReadChrct.removeEventListener('characteristicvaluechanged', this.onBatteryChanged);
         }
         this.onBatteryChanged = null;
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
     };
 
     async init(): Promise<void> {
@@ -241,7 +230,7 @@ class GiikerConnection implements SmartCubeConnection {
         this.lastFacelet = facelet;
 
         const timestamp = now();
-        this.events$.next({
+        this.bus.emit({
             timestamp,
             type: "FACELETS",
             facelets: facelet
@@ -257,7 +246,7 @@ class GiikerConnection implements SmartCubeConnection {
                 this.onBatteryChanged = (evt: Event) => {
                     const val = (evt.target as BluetoothRemoteGATTCharacteristic).value;
                     if (!val) return;
-                    this.emitBatteryLevel(val.getUint8(1));
+                    this.bus.emitBattery(val.getUint8(1));
                 };
                 this.rwReadChrct.addEventListener('characteristicvaluechanged', this.onBatteryChanged);
                 await this.rwReadChrct.startNotifications();
@@ -286,12 +275,12 @@ class GiikerConnection implements SmartCubeConnection {
         if (command.type === "REQUEST_BATTERY") {
             // Periodic battery polling is set up in init when available.
             if (this.rwWriteChrct) {
-                this.forceNextBatteryEmission = true;
+                this.bus.forceNextBattery();
                 await writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([0xb5]).buffer);
             }
         } else if (command.type === "REQUEST_FACELETS") {
             if (this.lastFacelet) {
-                this.events$.next({
+                this.bus.emit({
                     timestamp: now(),
                     type: "FACELETS",
                     facelets: this.lastFacelet
@@ -312,8 +301,7 @@ class GiikerConnection implements SmartCubeConnection {
             await this.dataChrct.stopNotifications().catch(() => {});
             this.dataChrct = null;
         }
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
             this.batteryInterval = null;
@@ -328,8 +316,8 @@ class GiikerConnection implements SmartCubeConnection {
         this.onBatteryChanged = null;
         this.rwWriteChrct = null;
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }

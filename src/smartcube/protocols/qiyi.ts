@@ -1,5 +1,6 @@
-import { Subject } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { Observable } from 'rxjs';
+import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
+import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { resolveCubeMac } from '../attachment/resolve-mac';
@@ -68,30 +69,37 @@ class QiYiConnection implements SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo = QIYI_PROTOCOL;
-    readonly capabilities: SmartCubeCapabilities = {
+    private readonly bus = new SmartCubeEventBus({
         gyroscope: false,
         battery: true,
         facelets: true,
         hardware: true,
         reset: false
-    };
-    events$: Subject<SmartCubeEvent>;
+    });
+    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
 
     private device: BluetoothDevice;
     private cubeChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private curCubie = new CubieCube();
     private prevCubie = new CubieCube();
     private lastTs = 0;
-    private lastBatteryLevel: number | null = null;
-    private forceNextBatteryEmission = false;
     private writeChain: Promise<void> = Promise.resolve();
 
     constructor(device: BluetoothDevice, mac: string) {
         this.device = device;
         this.deviceName = device.name || 'QiYi';
         this.deviceMAC = mac;
-        this.events$ = new Subject<SmartCubeEvent>();
     }
+
+    get capabilities(): SmartCubeCapabilities {
+        return this.bus.capabilities as SmartCubeCapabilities;
+    }
+
+    getSnapshot(): SmartCubeSnapshot {
+        return this.bus.getSnapshot();
+    }
+
 
     private sendMessage(content: number[]): Promise<void> {
         if (!this.cubeChrct) return Promise.reject(new Error('[QiYi] Not connected'));
@@ -136,7 +144,7 @@ class QiYiConnection implements SmartCubeConnection {
         if (expectedCrc !== actualCrc) return;
 
         if (!this.capabilities.gyroscope) {
-            this.capabilities.gyroscope = true;
+            this.bus.setCapabilities({ gyroscope: true });
         }
 
         const dv = new DataView(Uint8Array.from(msg).buffer);
@@ -145,7 +153,7 @@ class QiYiConnection implements SmartCubeConnection {
         const az = dv.getInt16(10, false) / 1000;
         const aw = dv.getInt16(12, false) / 1000;
 
-        this.events$.next({
+        this.bus.emit({
             timestamp: now(),
             type: "GYRO",
             quaternion: {
@@ -158,29 +166,11 @@ class QiYiConnection implements SmartCubeConnection {
     }
 
     private emitHardwareEvent(): void {
-        this.events$.next({
+        this.bus.emit({
             timestamp: now(),
             type: "HARDWARE",
             hardwareName: this.deviceName,
             gyroSupported: this.capabilities.gyroscope
-        });
-    }
-
-    private emitBatteryLevel(rawLevel: number, timestamp = now()): void {
-        if (!Number.isFinite(rawLevel)) {
-            return;
-        }
-        const batteryLevel = Math.min(100, Math.max(0, Math.round(rawLevel)));
-        const forceEmission = this.forceNextBatteryEmission;
-        this.forceNextBatteryEmission = false;
-        if (!forceEmission && this.lastBatteryLevel === batteryLevel) {
-            return;
-        }
-        this.lastBatteryLevel = batteryLevel;
-        this.events$.next({
-            timestamp,
-            type: 'BATTERY',
-            batteryLevel,
         });
     }
 
@@ -199,13 +189,13 @@ class QiYiConnection implements SmartCubeConnection {
                 return; // not a legal cube state (wrong key or corrupt frame): keep the previous state
             }
 
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "FACELETS",
                 facelets: newFacelet
             });
 
-            this.emitBatteryLevel(msg[35]!, timestamp);
+            this.bus.emitBattery(msg[35]!, timestamp);
             this.lastTs = ts;
             return;
         }
@@ -231,7 +221,7 @@ class QiYiConnection implements SmartCubeConnection {
                 CubieCube.CubeMult(this.prevCubie, CubieCube.moveCube[m], this.curCubie);
                 const facelet = this.curCubie.toFaceCube();
 
-                this.events$.next({
+                this.bus.emit({
                     timestamp,
                     type: "MOVE",
                     face: axis,
@@ -241,7 +231,7 @@ class QiYiConnection implements SmartCubeConnection {
                     cubeTimestamp: Math.trunc(moveTs / 1.6)
                 });
 
-                this.events$.next({
+                this.bus.emit({
                     timestamp,
                     type: "FACELETS",
                     facelets: facelet
@@ -256,14 +246,14 @@ class QiYiConnection implements SmartCubeConnection {
                 this.lastTs = newMoves[newMoves.length - 1]![1];
             }
 
-            this.emitBatteryLevel(msg[35]!, timestamp);
+            this.bus.emitBattery(msg[35]!, timestamp);
             return;
         }
 
         if (opcode === 0x4) {
             // Sync confirmation: emit solved state; no ACK for op 4 in reference protocol.
             if (msg[1] !== 38) return;
-            this.events$.next({
+            this.bus.emit({
                 timestamp,
                 type: "FACELETS",
                 facelets: QIYI_SOLVED_FACELETS
@@ -278,10 +268,9 @@ class QiYiConnection implements SmartCubeConnection {
 
     private onDisconnect = (): void => {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.resetBatteryDedupe();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
     };
 
     async init(): Promise<void> {
@@ -303,7 +292,7 @@ class QiYiConnection implements SmartCubeConnection {
     async sendCommand(command: SmartCubeCommand): Promise<void> {
         if (command.type === "REQUEST_FACELETS" || command.type === "REQUEST_BATTERY") {
             if (command.type === "REQUEST_BATTERY") {
-                this.forceNextBatteryEmission = true;
+                this.bus.forceNextBattery();
             }
             await this.sendHello();
         } else if (command.type === "REQUEST_HARDWARE") {
@@ -317,11 +306,10 @@ class QiYiConnection implements SmartCubeConnection {
             await this.cubeChrct.stopNotifications().catch(() => {});
             this.cubeChrct = null;
         }
-        this.lastBatteryLevel = null;
-        this.forceNextBatteryEmission = false;
+        this.bus.resetBatteryDedupe();
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
-        this.events$.complete();
+        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }
