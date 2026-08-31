@@ -53,6 +53,12 @@ describe('MoyuV1Client.send', () => {
 });
 
 describe('MoyuV1Client.onReadNotification', () => {
+  it('ignores a final part that merges to an empty payload instead of throwing', () => {
+    const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);
+    // total=1, index=0 and no payload bytes: nothing to parse.
+    expect(() => client.onReadNotification(dvFromBytes([0x00, (1 << 4) | 0]))).not.toThrow();
+  });
+
   it('resolves a matching waiter when the final part arrives', async () => {
     vi.useFakeTimers();
     const client = new MoyuV1Client({} as BluetoothRemoteGATTCharacteristic);

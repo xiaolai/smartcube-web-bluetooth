@@ -250,8 +250,11 @@ class Moyu32Connection implements SmartCubeConnection {
             });
         } else if (msgType === 163) { // Facelets state
             const seq = parseInt(bits.slice(152, 160), 2);
-            this.latestFacelet = parseFacelet(bits.slice(8, 152));
-            this.prevCubie.fromFacelet(this.latestFacelet);
+            const facelet = parseFacelet(bits.slice(8, 152));
+            if (this.prevCubie.fromFacelet(facelet) === -1) {
+                return; // not a legal cube state (wrong key or corrupt frame): keep the previous state
+            }
+            this.latestFacelet = facelet;
             this.moveCnt = seq;
             this.prevMoveCnt = seq;
 

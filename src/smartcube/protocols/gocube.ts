@@ -317,10 +317,14 @@ class GoCubeConnection implements SmartCubeConnection {
         this.pollBattery();
         this.batteryInterval = setInterval(this.pollBattery, 60_000);
 
+        let initialStateTimer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
             firstStatePromise,
-            new Promise<void>((resolve) => setTimeout(resolve, INITIAL_STATE_TIMEOUT_MS))
+            new Promise<void>((resolve) => {
+                initialStateTimer = setTimeout(resolve, INITIAL_STATE_TIMEOUT_MS);
+            })
         ]);
+        clearTimeout(initialStateTimer);
         this.awaitingInitialState = false;
         this.resolveInitialState = undefined;
 
