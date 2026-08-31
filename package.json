@@ -1,7 +1,7 @@
 {
   "name": "smartcube-web-bluetooth",
   "version": "4.0.0",
-  "description": "Library for interaction with Smart Cubes (GAN, Giiker, GoCube, MoYu, QiYi) and GAN Smart Timers using Web Bluetooth API",
+  "description": "Library for interaction with multiple vendor Smart Cubes and Timers using Web Bluetooth API (hardened fork of poliva/smartcube-web-bluetooth)",
   "private": false,
   "types": "./dist/types/index.d.ts",
   "module": "./dist/esm/index.mjs",
@@ -52,7 +52,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/poliva/smartcube-web-bluetooth.git"
+    "url": "git+https://github.com/xiaolai/smartcube-web-bluetooth.git"
   },
   "dependencies": {
     "@types/web-bluetooth": "^0.0.20",

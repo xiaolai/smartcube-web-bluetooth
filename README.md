@@ -1,5 +1,32 @@
 ## smartcube-web-bluetooth: multi-vendor Smart Cubes & GAN Smart Timers via Web Bluetooth API
 
+> ### This is a fork, and it has diverged on purpose
+>
+> Upstream is [poliva/smartcube-web-bluetooth](https://github.com/poliva/smartcube-web-bluetooth),
+> and this fork is **ahead of it and not behind it**. The divergence is deliberate rather than
+> accidental: it exists because a downstream app depends on this library and needed it hardened
+> faster than a round trip allows.
+>
+> What is different here, in shape:
+>
+> - **Hardening across every protocol** — frame validation, deterministic init ordering, atomic
+>   connection setup, teardown that cannot strand a listener, and bounds checks on every decode.
+> - **Two genuine decode fixes.** A throwing validator could poison the notification chain, and the
+>   MoYu v1 facelet map had transposed cells — that one is a wrong cube state, not a rough edge.
+> - **The GAN move serial is on the public event.** Moves and facelet reports share a counter, and
+>   exposing it lets a consumer tell which move a snapshot reflects. Optional, because only the GAN
+>   protocols number their moves.
+> - **A state snapshot beside the live stream** (`state$` / `getSnapshot()`), so state observed
+>   before a consumer subscribes is available rather than lost.
+> - **Tests: 249, against upstream's 116**, including capture-replay for every protocol family.
+>
+> The isolated bug fixes are worth upstreaming and are intended to go back. The broad hardening may
+> not be, and that is fine — but the honest position is that this fork is maintained here, not that
+> it is a patch queue waiting to be merged.
+>
+> **If you want the original**, use upstream. Nothing here is a criticism of it; the fork exists
+> because of a schedule, not a disagreement.
+
 This library is designed for easy interaction with Smart Cubes (GAN, Giiker, GoCube, MoYu, QiYi) and GAN Smart Timers on platforms that support [Web Bluetooth API](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md).
 
 Nature of the GAN Smart Timer and Smart Cubes is event-driven, so this library depends on [RxJS](https://rxjs.dev/), and library API provides [Observable](https://rxjs.dev/guide/observable) where you can subscribe for events.
@@ -8,7 +35,8 @@ Nature of the GAN Smart Timer and Smart Cubes is event-driven, so this library d
 
 The project is currently hosted on GitHub:
 
-- Repository: `https://github.com/poliva/smartcube-web-bluetooth`
+- Repository (this fork): `https://github.com/xiaolai/smartcube-web-bluetooth`
+- Upstream: `https://github.com/poliva/smartcube-web-bluetooth`
 
 You can consume it directly via npm using the GitHub URL:
 
