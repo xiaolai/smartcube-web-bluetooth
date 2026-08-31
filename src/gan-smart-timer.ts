@@ -174,26 +174,28 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
 
     // Subscribe to value updates of the timer state characteristic
     var eventSubject = new Subject<GanTimerEvent>();
-    var onStateChanged = async (evt: Event) => {
+    var onStateChanged = (evt: Event) => {
         var chr: BluetoothRemoteGATTCharacteristic = <BluetoothRemoteGATTCharacteristic>evt.target;
-        var data: DataView = chr.value!;
-        if (validateEventData(data)) {
+        var data = chr.value;
+        // A frame that fails the magic/CRC check is dropped; erroring the subject would
+        // terminate the stream for every subscriber on a single corrupt notification.
+        if (data && validateEventData(data)) {
             eventSubject.next(buildTimerEvent(data));
-        } else {
-            eventSubject.error("Invalid event data received from Timer");
         }
     };
     stateCharacteristic.addEventListener('characteristicvaluechanged', onStateChanged);
-    stateCharacteristic.startNotifications();
+    await stateCharacteristic.startNotifications();
 
     // This action retrieves latest recorded times from timer
     var getRecordedTimesAction = async (): Promise<GanTimerRecordedTimes> => {
         var data = await timeCharacteristic.readValue();
-        return data?.byteLength >= 16 ?
-            Promise.resolve({
-                displayTime: makeTimeFromRaw(data, 0),
-                previousTimes: [makeTimeFromRaw(data, 4), makeTimeFromRaw(data, 8), makeTimeFromRaw(data, 12)]
-            }) : Promise.reject("Invalid time characteristic value received from Timer");
+        if (!data || data.byteLength < 16) {
+            throw new Error("Invalid time characteristic value received from Timer");
+        }
+        return {
+            displayTime: makeTimeFromRaw(data, 0),
+            previousTimes: [makeTimeFromRaw(data, 4), makeTimeFromRaw(data, 8), makeTimeFromRaw(data, 12)]
+        };
     }
 
     // Manual disconnect action
