@@ -5,6 +5,7 @@ import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { resolveCubeMac } from '../attachment/resolve-mac';
+import { parseMoyu32FaceletBits as parseFacelet } from '../attachment/moyu32-facelets';
 import { throwIfAborted } from '../attachment/abort';
 import { createMoyu32SessionCrypto, type Moyu32SessionCrypto } from '../attachment/moyu32-session-crypto';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
@@ -68,21 +69,6 @@ function parseMoyu32MacFromMf(mfData: BluetoothManufacturerData | DataView | nul
         }
     }
     return null;
-}
-
-function parseFacelet(faceletBits: string): string {
-    const state: string[] = [];
-    const faces = [2, 5, 0, 3, 4, 1]; // parse in order URFDLB instead of FBUDLR
-    for (let i = 0; i < 6; i++) {
-        const face = faceletBits.slice(faces[i] * 24, 24 + faces[i] * 24);
-        for (let j = 0; j < 8; j++) {
-            state.push("FBUDLR".charAt(parseInt(face.slice(j * 3, 3 + j * 3), 2)));
-            if (j === 3) {
-                state.push("FBUDLR".charAt(faces[i]));
-            }
-        }
-    }
-    return state.join('');
 }
 
 const MOYU32_PROTOCOL: SmartCubeProtocolInfo = { id: 'moyu32', name: 'MoYu32' };

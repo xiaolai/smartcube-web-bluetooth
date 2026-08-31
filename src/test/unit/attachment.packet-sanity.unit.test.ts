@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isValidMoYu32DecryptedPacket, isValidQiYiDecryptedPacket } from '../../smartcube/attachment/packet-sanity';
+import { crc16modbus } from '../../smartcube/attachment/qiyi-wire';
 
 describe('isValidMoYu32DecryptedPacket', () => {
   it('returns false when payload is missing or too short', () => {
@@ -38,60 +39,108 @@ describe('isValidMoYu32DecryptedPacket', () => {
     }
     expect(isValidMoYu32DecryptedPacket(bytes)).toBe(true);
   });
+
+  it('accepts a genuine battery packet (level byte + zero padding)', () => {
+    const bytes = new Array<number>(20).fill(0);
+    bytes[0] = 164;
+    bytes[1] = 55;
+    // The old generic entropy screen rejected this real packet shape (18 zero bytes).
+    expect(isValidMoYu32DecryptedPacket(bytes)).toBe(true);
+  });
+
+  it('rejects battery packets with an impossible level or nonzero padding', () => {
+    const overLevel = new Array<number>(20).fill(0);
+    overLevel[0] = 164;
+    overLevel[1] = 101;
+    expect(isValidMoYu32DecryptedPacket(overLevel)).toBe(false);
+    const dirtyTail = new Array<number>(20).fill(0);
+    dirtyTail[0] = 164;
+    dirtyTail[1] = 55;
+    dirtyTail[19] = 7;
+    expect(isValidMoYu32DecryptedPacket(dirtyTail)).toBe(false);
+  });
+
+  function bitsToBytes(bits: string): number[] {
+    const bytes: number[] = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    }
+    return bytes;
+  }
+
+  it('accepts a facelets packet whose body decodes to a structurally valid cube state', () => {
+    // Solved cube: face block k (source order FBUDLR) is eight 3-bit stickers of color k.
+    let body = '';
+    for (let k = 0; k < 6; k++) {
+      body += k.toString(2).padStart(3, '0').repeat(8);
+    }
+    const bits = (163).toString(2).padStart(8, '0') + body + '00000001';
+    expect(isValidMoYu32DecryptedPacket(bitsToBytes(bits))).toBe(true);
+  });
+
+  it('rejects a bit-balanced facelets body that is not a valid cube state', () => {
+    // '01' repeated is balanced (the old screen accepted it) but decodes to garbage colors.
+    const body = '01'.repeat(72);
+    const bits = (163).toString(2).padStart(8, '0') + body + '00000001';
+    expect(isValidMoYu32DecryptedPacket(bitsToBytes(bits))).toBe(false);
+  });
+
+  it('validates each move against its own timestamp slot, not the first N slots', () => {
+    // Slot 0 is filler; the single real move sits in slot 1 with a plausible timestamp.
+    // The old code read slot 0's timestamp (zero) and wrongly rejected the packet.
+    const ts = ['0'.repeat(16), (500).toString(2).padStart(16, '0'), '0'.repeat(16), '0'.repeat(16), '0'.repeat(16)];
+    const codes = [31, 3, 31, 31, 31].map((c) => c.toString(2).padStart(5, '0'));
+    // opcode(8) + timestamps(80) + move counter(8) + codes(25) + padding(39) = 160 bits
+    const bits = (165).toString(2).padStart(8, '0') + ts.join('') + '0'.repeat(8) + codes.join('') + '0'.repeat(39);
+    expect(isValidMoYu32DecryptedPacket(bitsToBytes(bits))).toBe(true);
+  });
 });
+
 
 describe('isValidQiYiDecryptedPacket', () => {
-  it('returns false when payload is too short', () => {
+  /** Build a plaintext QiYi frame exactly as the wire codec does (magic, len, CRC, padding). */
+  function qiyiFrame(content: number[]): Uint8Array {
+    const msg = [0xfe, 4 + content.length, ...content];
+    const crc = crc16modbus(msg);
+    msg.push(crc & 0xff, crc >> 8);
+    while (msg.length % 16 !== 0) {
+      msg.push(0);
+    }
+    return Uint8Array.from(msg);
+  }
+
+  it('accepts a CRC-valid hello response (opcode 0x2)', () => {
+    expect(isValidQiYiDecryptedPacket(qiyiFrame([0x02, 0, 0, 0, 1, 9, 9, 9]))).toBe(true);
+  });
+
+  it('accepts a hello response with a zero device timestamp (wraparound/boot is legitimate)', () => {
+    expect(isValidQiYiDecryptedPacket(qiyiFrame([0x02, 0, 0, 0, 0]))).toBe(true);
+  });
+
+  it('rejects a CRC-valid state-change packet: fixed-key traffic proves nothing about the candidate', () => {
+    expect(isValidQiYiDecryptedPacket(qiyiFrame([0x03, 0, 0, 0, 1, 9, 9, 9]))).toBe(false);
+  });
+
+  it('rejects quaternion packets: gyro streaming is candidate-independent', () => {
+    const e = new Uint8Array(16);
+    e[0] = 204;
+    e[1] = 16;
+    expect(isValidQiYiDecryptedPacket(e)).toBe(false);
+  });
+
+  it('rejects a hello frame with a corrupt CRC', () => {
+    const frame = qiyiFrame([0x02, 0, 0, 0, 1]);
+    frame[3] ^= 0xff;
+    expect(isValidQiYiDecryptedPacket(frame)).toBe(false);
+  });
+
+  it('rejects a truncated frame whose declared length exceeds the payload', () => {
+    const frame = qiyiFrame([0x02, 0, 0, 0, 1]);
+    expect(isValidQiYiDecryptedPacket(frame.subarray(0, 8))).toBe(false);
+  });
+
+  it('rejects payloads that are too short or lack the magic byte', () => {
     expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 1, 2, 3, 4, 5]))).toBe(false);
-  });
-
-  it('accepts a valid 0xFE payload with cmd/sub bounds and non-trivial 32-bit value', () => {
-    const e = new Uint8Array([254, 7, 2, 0, 0, 0, 1]);
-    expect(isValidQiYiDecryptedPacket(e)).toBe(true);
-  });
-
-  it('rejects 0xFE payload when sub is not 2 or 3', () => {
-    const e = new Uint8Array([254, 7, 4, 0, 0, 0, 1]);
-    expect(isValidQiYiDecryptedPacket(e)).toBe(false);
-  });
-
-  it('rejects 0xFE payload when cmd is outside 7..100', () => {
-    expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 6, 2, 0, 0, 0, 1]))).toBe(false);
-    expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 101, 2, 0, 0, 0, 1]))).toBe(false);
-  });
-
-  it('rejects 0xFE payload when 32-bit value is 0 or 0xFFFFFFFF', () => {
-    expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 7, 2, 0, 0, 0, 0]))).toBe(false);
-    expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 7, 2, 255, 255, 255, 255]))).toBe(false);
-  });
-
-  it('accepts 0xFE payload boundaries for 32-bit value (1 and 0xFFFFFFFE)', () => {
-    expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 7, 2, 0, 0, 0, 1]))).toBe(true);
-    expect(isValidQiYiDecryptedPacket(new Uint8Array([254, 7, 2, 255, 255, 255, 254]))).toBe(true);
-  });
-
-  it('accepts a valid 0xCC 0x10 payload when int16 magnitudes are within bounds', () => {
-    const e = new Uint8Array(16);
-    e[0] = 204;
-    e[1] = 16;
-    const dv = new DataView(e.buffer);
-    dv.setInt16(6, 2000, false);
-    dv.setInt16(8, -2000, false);
-    dv.setInt16(10, 0, false);
-    dv.setInt16(12, 1999, false);
-    expect(isValidQiYiDecryptedPacket(e)).toBe(true);
-  });
-
-  it('rejects a 0xCC 0x10 payload when any magnitude exceeds 2000', () => {
-    const e = new Uint8Array(16);
-    e[0] = 204;
-    e[1] = 16;
-    const dv = new DataView(e.buffer);
-    dv.setInt16(6, 2001, false);
-    dv.setInt16(8, 0, false);
-    dv.setInt16(10, 0, false);
-    dv.setInt16(12, 0, false);
-    expect(isValidQiYiDecryptedPacket(e)).toBe(false);
+    expect(isValidQiYiDecryptedPacket(qiyiFrame([0x02]).map((b, i) => (i === 0 ? 0xfd : b)))).toBe(false);
   });
 });
-
