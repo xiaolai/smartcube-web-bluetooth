@@ -27,7 +27,9 @@ interface SmartCubeProtocol {
 const protocolRegistry: SmartCubeProtocol[] = [];
 
 function registerProtocol(protocol: SmartCubeProtocol): void {
-    protocolRegistry.push(protocol);
+    if (!protocolRegistry.includes(protocol)) {
+        protocolRegistry.push(protocol);
+    }
 }
 
 function getRegisteredProtocols(): SmartCubeProtocol[] {

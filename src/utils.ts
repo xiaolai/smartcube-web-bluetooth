@@ -46,34 +46,38 @@ function linregress(X: Array<number | null>, Y: Array<number | null>) {
  * @returns New copy of move list with fitted cubeTimestamp values
  */
 function cubeTimestampLinearFit(cubeMoves: Array<GanCubeMove>): Array<GanCubeMove> {
-    var res: Array<GanCubeMove> = [];
+    // Work on copies: the caller's move objects are never modified.
+    var moves: Array<GanCubeMove> = cubeMoves.map(m => ({ ...m }));
     // Calculate and fix timestamp values for missed and recovered cube moves.
-    if (cubeMoves.length >= 2) {
+    if (moves.length >= 2) {
         // 1st pass - tail-to-head, align missed move cube timestamps to next move -50ms
-        for (let i = cubeMoves.length - 1; i > 0; i--) {
-            if (cubeMoves[i].cubeTimestamp != null && cubeMoves[i - 1].cubeTimestamp == null)
-                cubeMoves[i - 1].cubeTimestamp = cubeMoves[i].cubeTimestamp! - 50;
+        for (let i = moves.length - 1; i > 0; i--) {
+            if (moves[i].cubeTimestamp != null && moves[i - 1].cubeTimestamp == null)
+                moves[i - 1].cubeTimestamp = moves[i].cubeTimestamp! - 50;
         }
         // 2nd pass - head-to-tail, align missed move cube timestamp to prev move +50ms
-        for (let i = 0; i < cubeMoves.length - 1; i++) {
-            if (cubeMoves[i].cubeTimestamp != null && cubeMoves[i + 1].cubeTimestamp == null)
-                cubeMoves[i + 1].cubeTimestamp = cubeMoves[i].cubeTimestamp! + 50;
+        for (let i = 0; i < moves.length - 1; i++) {
+            if (moves[i].cubeTimestamp != null && moves[i + 1].cubeTimestamp == null)
+                moves[i + 1].cubeTimestamp = moves[i].cubeTimestamp! + 50;
         }
     }
-    // Apply linear regression to the cube timestamps
-    if (cubeMoves.length > 0) {
-        var [slope, intercept] = linregress(cubeMoves.map(m => m.cubeTimestamp), cubeMoves.map(m => m.localTimestamp));
-        var first = Math.round(slope * cubeMoves[0].cubeTimestamp! + intercept);
-        cubeMoves.forEach(m => {
-            res.push({
-                face: m.face,
-                direction: m.direction,
-                move: m.move,
-                localTimestamp: m.localTimestamp,
-                cubeTimestamp: Math.round(slope * m.cubeTimestamp! + intercept) - first
-            });
-        });
+    // After the two passes either every move has a cube timestamp or none does.
+    if (moves.length === 0 || moves[0].cubeTimestamp == null) {
+        return moves;
     }
+    // Apply linear regression to the cube timestamps
+    var res: Array<GanCubeMove> = [];
+    var [slope, intercept] = linregress(moves.map(m => m.cubeTimestamp), moves.map(m => m.localTimestamp));
+    var first = Math.round(slope * moves[0].cubeTimestamp + intercept);
+    moves.forEach(m => {
+        res.push({
+            face: m.face,
+            direction: m.direction,
+            move: m.move,
+            localTimestamp: m.localTimestamp,
+            cubeTimestamp: Math.round(slope * m.cubeTimestamp! + intercept) - first
+        });
+    });
     return res;
 }
 

@@ -194,6 +194,9 @@ export class MoyuV1Client {
         }
         const merged = mergeParts(this.incomplete);
         this.incomplete = [];
+        if (merged.byteLength === 0) {
+            return; // no header byte: nothing to dispatch
+        }
         const receivedAt = Date.now();
         const r = parseResponse(merged, receivedAt);
         const idx = this.waiters.findIndex((w) => w.command === r.command && w.id === r.id);

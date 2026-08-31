@@ -16,10 +16,13 @@ async function delay(ms: number): Promise<void> {
 
 async function connectGattWithTimeout(gatt: BluetoothRemoteGATTServer, timeoutMs: number): Promise<void> {
     const sym = Symbol('gattTimeout');
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
         await Promise.race([
             gatt.connect(),
-            new Promise<never>((_, rej) => setTimeout(() => rej(sym), timeoutMs)),
+            new Promise<never>((_, rej) => {
+                timer = setTimeout(() => rej(sym), timeoutMs);
+            }),
         ]);
     } catch (e) {
         if (e === sym) {
@@ -28,6 +31,8 @@ async function connectGattWithTimeout(gatt: BluetoothRemoteGATTServer, timeoutMs
         }
         await disconnectGattSafe(gatt).catch(() => {});
         throw e;
+    } finally {
+        clearTimeout(timer);
     }
 }
 

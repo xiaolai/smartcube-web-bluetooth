@@ -171,7 +171,8 @@ class QiYiConnection implements SmartCubeConnection {
 
     private onCubeEvent = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
-        if (!value) return;
+        // AES-ECB ciphertext is always whole 16-byte blocks; anything else is a truncated frame.
+        if (!value || value.byteLength === 0 || value.byteLength % 16 !== 0) return;
 
         const encMsg: number[] = [];
         for (let i = 0; i < value.byteLength; i++) {
@@ -260,6 +261,9 @@ class QiYiConnection implements SmartCubeConnection {
             // Hello response — always ACK
             this.sendMessage(msg.slice(2, 7)).catch(() => {});
             const newFacelet = parseFacelet(msg.slice(7, 34));
+            if (this.prevCubie.fromFacelet(newFacelet) === -1) {
+                return; // not a legal cube state (wrong key or corrupt frame): keep the previous state
+            }
 
             this.events$.next({
                 timestamp,
@@ -268,8 +272,6 @@ class QiYiConnection implements SmartCubeConnection {
             });
 
             this.emitBatteryLevel(msg[35]!, timestamp);
-
-            this.prevCubie.fromFacelet(newFacelet);
             this.lastTs = ts;
             return;
         }

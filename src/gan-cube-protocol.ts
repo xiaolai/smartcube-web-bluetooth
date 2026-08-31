@@ -517,7 +517,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
             });
 
         } else if (eventType == 0x0D) { // DISCONNECT
-            conn.disconnect();
+            conn.disconnect().catch(() => { /* already disconnected */ });
         }
 
         return cubeEvents;
@@ -597,7 +597,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
         }
         // Probably something went wrong and buffer is no longer evicted, so forcibly disconnect the cube
         if (conn && this.moveBuffer.length > 16) {
-            conn.disconnect();
+            conn.disconnect().catch(() => { /* already disconnected */ });
         }
         return evictedEvents;
     }
@@ -802,7 +802,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                 });
 
             } else if (eventType == 0x11) { // DISCONNECT
-                conn.disconnect();
+                conn.disconnect().catch(() => { /* already disconnected */ });
             }
 
         }
@@ -908,7 +908,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
         }
         // Probably something went wrong and buffer is no longer evicted, so forcibly disconnect the cube
         if (conn && this.moveBuffer.length > 16) {
-            conn.disconnect();
+            conn.disconnect().catch(() => { /* already disconnected */ });
         }
         return evictedEvents;
     }
@@ -1166,7 +1166,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
             });
 
         } else if (eventType == 0xEA) { // DISCONNECT
-            conn.disconnect();
+            conn.disconnect().catch(() => { /* already disconnected */ });
         }
 
         return cubeEvents;

@@ -31,9 +31,8 @@ describe('cubeTimestampLinearFit', () => {
       move({ localTimestamp: 1050, cubeTimestamp: 500 }),
     ];
     const res = cubeTimestampLinearFit(moves);
-    expect(res).toHaveLength(2);
-    // the algorithm sets missing cubeTimestamp to next - 50
-    expect(moves[0]!.cubeTimestamp).toBe(450);
+    // Filled to 450, then fitted and normalised to the first move: [0, 50].
+    expect(res.map((m) => m.cubeTimestamp)).toEqual([0, 50]);
   });
 
   it('fills a missing cubeTimestamp by aligning to the previous move plus 50ms', () => {
@@ -42,8 +41,25 @@ describe('cubeTimestampLinearFit', () => {
       move({ localTimestamp: 1050, cubeTimestamp: null }),
     ];
     const res = cubeTimestampLinearFit(moves);
-    expect(res).toHaveLength(2);
-    expect(moves[1]!.cubeTimestamp).toBe(550);
+    expect(res.map((m) => m.cubeTimestamp)).toEqual([0, 50]);
+  });
+
+  it('does not modify the input moves', () => {
+    const moves = [
+      move({ localTimestamp: 1000, cubeTimestamp: null }),
+      move({ localTimestamp: 1050, cubeTimestamp: 500 }),
+    ];
+    const snapshot = moves.map((m) => ({ ...m }));
+    cubeTimestampLinearFit(moves);
+    expect(moves).toEqual(snapshot);
+  });
+
+  it('returns null cube timestamps (never NaN) when no move carries one', () => {
+    const res = cubeTimestampLinearFit([
+      move({ localTimestamp: 1000, cubeTimestamp: null }),
+      move({ localTimestamp: 1050, cubeTimestamp: null }),
+    ]);
+    expect(res.map((m) => m.cubeTimestamp)).toEqual([null, null]);
   });
 
   it('uses slope=1 when cubeTimestamp variance is near zero', () => {
@@ -81,4 +97,3 @@ describe('cubeTimestampCalcSkew', () => {
     expect(skew).toBeCloseTo(2.0, 3);
   });
 });
-

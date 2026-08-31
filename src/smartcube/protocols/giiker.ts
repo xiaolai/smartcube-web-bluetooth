@@ -15,6 +15,9 @@ const SERVICE_UUID_RW = '0000aaaa' + UUID_SUFFIX;
 const CHRCT_UUID_READ = '0000aaab' + UUID_SUFFIX;
 const CHRCT_UUID_WRITE = '0000aaac' + UUID_SUFFIX;
 
+/** Every Giiker state notification/read is a 20-byte frame (18 data bytes + encryption marker/key nibbles). */
+const GIIKER_STATE_LENGTH = 20;
+
 const GIIKER_CFACELET = [
     [26, 15, 29], [20, 8, 9], [18, 38, 6], [24, 27, 44],
     [51, 35, 17], [45, 11, 2], [47, 0, 36], [53, 42, 33]
@@ -136,7 +139,7 @@ class GiikerConnection implements SmartCubeConnection {
 
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
-        if (!value) return;
+        if (!value || value.byteLength < GIIKER_STATE_LENGTH) return; // truncated frame
         if (!this.isReady) {
             // Copy the view, because the underlying buffer can be reused by the platform.
             const b = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
@@ -226,6 +229,9 @@ class GiikerConnection implements SmartCubeConnection {
         this.dataChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
         await this.dataChrct.startNotifications();
         const initialValue = await this.dataChrct.readValue();
+        if (initialValue.byteLength < GIIKER_STATE_LENGTH) {
+            throw new Error(`[Giiker] Unexpected state length ${initialValue.byteLength}, expected ${GIIKER_STATE_LENGTH}`);
+        }
         const { facelet } = parseState(initialValue);
         this.lastFacelet = facelet;
 
