@@ -1,23 +1,28 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import { connectSmartCube } from './connect';
-import { registerProtocol, getRegisteredProtocols, type SmartCubeProtocol } from './protocol';
+import { registerProtocol, getRegisteredProtocols, unregisterProtocol, type SmartCubeProtocol } from './protocol';
 import type { SmartCubeCapabilities, SmartCubeCommand, SmartCubeConnection, SmartCubeEvent, SmartCubeSnapshot } from './types';
 import { FIXTURES, loadFixture } from '../test/fixtures';
 import { installMockBluetoothFromFixture } from '../test/bluetooth-mock';
 import * as addressHints from './attachment/address-hints';
 
 function clearProtocolRegistry(): SmartCubeProtocol[] {
-  const reg = getRegisteredProtocols();
-  const snapshot = [...reg];
-  reg.length = 0;
+  const snapshot = getRegisteredProtocols();
+  for (const p of snapshot) {
+    unregisterProtocol(p);
+  }
   return snapshot;
 }
 
 function restoreProtocolRegistry(protocols: SmartCubeProtocol[]): void {
-  const reg = getRegisteredProtocols();
-  reg.length = 0;
-  reg.push(...protocols);
+  // Remove anything a test registered, then reinstate the previous set.
+  for (const p of getRegisteredProtocols()) {
+    unregisterProtocol(p);
+  }
+  for (const p of protocols) {
+    registerProtocol(p);
+  }
 }
 
 describe('connectSmartCube (error paths)', () => {
@@ -35,10 +40,10 @@ describe('connectSmartCube (error paths)', () => {
     const prev = clearProtocolRegistry();
     try {
       const fixture = await loadFixture(FIXTURES.ganGen2_small);
-      const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'timeout-test' });
-      const disconnectSpy = vi.spyOn(device.gatt!, 'disconnect');
+      installMockBluetoothFromFixture(fixture, { deviceId: 'timeout-test' });
       const removeCachedMacSpy = vi.spyOn(addressHints, 'removeCachedMacForDevice');
       const setCachedMacSpy = vi.spyOn(addressHints, 'setCachedMacForDevice');
+      const connDisconnect = vi.fn(async () => {});
 
       const caps: SmartCubeCapabilities = {
         gyroscope: false,
@@ -66,10 +71,7 @@ describe('connectSmartCube (error paths)', () => {
             sendCommand: async (_cmd: SmartCubeCommand) => {
               // Intentionally do not emit FACELETS (verification should time out).
             },
-            disconnect: async () => {
-              events$.next({ timestamp: Date.now(), type: 'DISCONNECT' });
-              events$.complete();
-            },
+            disconnect: connDisconnect,
           };
           return conn;
         },
@@ -89,7 +91,9 @@ describe('connectSmartCube (error paths)', () => {
 
       expect(removeCachedMacSpy).toHaveBeenCalledTimes(1);
       expect(setCachedMacSpy).not.toHaveBeenCalled();
-      expect(disconnectSpy).toHaveBeenCalled();
+      // Teardown goes through the connection (notifications, listeners, timers),
+      // not a raw GATT disconnect.
+      expect(connDisconnect).toHaveBeenCalledTimes(1);
     } finally {
       restoreProtocolRegistry(prev);
       vi.useRealTimers();

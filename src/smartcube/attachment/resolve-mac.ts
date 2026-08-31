@@ -1,7 +1,8 @@
 import type { AttachmentContext } from './types';
 import type { MacAddressProvider } from '../types';
-import { getCachedMacForDevice, waitForManufacturerData } from './address-hints';
+import { getCachedMacForDevice, removeCachedMacForDevice, waitForManufacturerData } from './address-hints';
 import { isAbortError, throwIfAborted } from './abort';
+import { parseMacBytes } from './mac-address';
 
 export type ResolveCubeMacOptions = {
     /** Parse a MAC from advertisement manufacturer data (context-supplied or freshly awaited). */
@@ -21,10 +22,26 @@ export type ResolveCubeMacOptions = {
     probeTimeoutMs?: number;
 };
 
+/** A malformed cached value would reach key derivation and fail every connect: drop it. */
+function validCachedMac(device: BluetoothDevice): string | null {
+    const cached = getCachedMacForDevice(device);
+    if (!cached) {
+        return null;
+    }
+    try {
+        parseMacBytes(cached);
+        return cached;
+    } catch {
+        removeCachedMacForDevice(device);
+        return null;
+    }
+}
+
 /**
  * The MAC-resolution ladder shared by drivers that must learn the cube's address:
- * advertisement context -> cached MAC -> provider -> fresh advertisements (merged frames) ->
- * name-derived candidates (optionally probed) -> provider fallback. Returns null when exhausted.
+ * advertisement context -> cached MAC (validated) -> provider -> fresh advertisements
+ * (merged frames) -> name-derived candidates (optionally probed) -> provider fallback.
+ * Returns null when exhausted.
  */
 export async function resolveCubeMac(
     device: BluetoothDevice,
@@ -34,7 +51,7 @@ export async function resolveCubeMac(
 ): Promise<string | null> {
     throwIfAborted(context?.signal);
     let mac = options.parseFromManufacturerData(context?.advertisementManufacturerData ?? null);
-    mac = mac || getCachedMacForDevice(device);
+    mac = mac || validCachedMac(device);
     if (!mac && macProvider) {
         const r = await macProvider(device, false);
         throwIfAborted(context?.signal);

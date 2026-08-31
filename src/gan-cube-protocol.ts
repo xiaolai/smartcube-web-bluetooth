@@ -189,6 +189,8 @@ export type GanClassicConnectionOptions = {
     validateDecrypted?: (plaintext: Uint8Array) => boolean;
     /** Subject to emit into; lets a caller observe events emitted while create() is still running. */
     events$?: Subject<GanCubeEvent>;
+    /** The resolved cube MAC; avoids mutating the browser-owned BluetoothDevice object. */
+    mac?: string;
 };
 
 /**
@@ -206,6 +208,7 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
     events$: Subject<GanCubeEvent>;
 
     private readonly validateDecrypted?: (plaintext: Uint8Array) => boolean;
+    private readonly explicitMac: string | null;
     private readonly writeQueue = new GattWriteQueue();
     private disconnectOnce = false;
 
@@ -216,7 +219,8 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         encrypter: GanCubeEncrypter,
         driver: GanProtocolDriver,
         validateDecrypted?: (plaintext: Uint8Array) => boolean,
-        events$?: Subject<GanCubeEvent>
+        events$?: Subject<GanCubeEvent>,
+        explicitMac?: string
     ) {
         this.device = device;
         this.commandCharacteristic = commandCharacteristic;
@@ -225,6 +229,7 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         this.driver = driver;
         this.validateDecrypted = validateDecrypted;
         this.events$ = events$ ?? new Subject<GanCubeEvent>();
+        this.explicitMac = explicitMac ?? null;
     }
 
     public static async create(
@@ -242,7 +247,8 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
             encrypter,
             driver,
             options?.validateDecrypted,
-            options?.events$
+            options?.events$,
+            options?.mac
         );
         conn.device.addEventListener('gattserverdisconnected', conn.onDisconnect);
         conn.stateCharacteristic.addEventListener('characteristicvaluechanged', conn.onStateUpdate);
@@ -255,7 +261,7 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
     }
 
     get deviceMAC(): string {
-        return this.device.mac || "00:00:00:00:00:00";
+        return this.explicitMac || this.device.mac || "00:00:00:00:00:00";
     }
 
     async sendCommandMessage(message: Uint8Array): Promise<void> {
