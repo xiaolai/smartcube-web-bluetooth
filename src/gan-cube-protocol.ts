@@ -281,7 +281,13 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         const raw = new Uint8Array(
             eventMessage.buffer.slice(eventMessage.byteOffset, eventMessage.byteOffset + eventMessage.byteLength)
         );
-        this.notificationChain = this.notificationChain.then(() => this.handleNotification(raw));
+        // The catch is a backstop invariant: a rejected chain would silently skip every
+        // subsequent notification, so no failure may ever leave it rejected.
+        this.notificationChain = this.notificationChain
+            .then(() => this.handleNotification(raw))
+            .catch((e) => {
+                console.error('[gan] notification handler failed; frame dropped', e);
+            });
     }
 
     private async handleNotification(raw: Uint8Array): Promise<void> {
@@ -293,7 +299,13 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
             } catch {
                 return; // not a whole number of AES blocks: corrupt frame
             }
-            if (this.validateDecrypted && !this.validateDecrypted(decryptedMessage)) return;
+            try {
+                if (this.validateDecrypted && !this.validateDecrypted(decryptedMessage)) return;
+            } catch (e) {
+                // A throwing validator is a defect, not line noise: drop the frame loudly.
+                console.error('[gan] packet validator threw', e);
+                return;
+            }
             try {
                 const cubeEvents = await this.driver.handleStateEvent(this, decryptedMessage);
                 cubeEvents.forEach(e => this.events$.next(e));

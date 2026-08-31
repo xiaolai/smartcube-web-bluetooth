@@ -121,3 +121,43 @@ describe('GanCubeClassicConnection notification ordering (gen4)', () => {
     await conn.disconnect();
   });
 });
+
+describe('GanCubeClassicConnection notification-chain resilience', () => {
+  it('keeps processing later notifications after a validator throws (no poisoned chain)', async () => {
+    const command = new MockCharacteristic();
+    const state = new MockCharacteristic();
+    const device = new EventTarget();
+
+    let first = true;
+    const throwingValidator = (): boolean => {
+      if (first) {
+        first = false;
+        throw new Error('validator defect');
+      }
+      return true;
+    };
+
+    const conn = await GanCubeClassicConnection.create(
+      device as unknown as BluetoothDevice,
+      command as unknown as BluetoothRemoteGATTCharacteristic,
+      state as unknown as BluetoothRemoteGATTCharacteristic,
+      identity,
+      new GanGen4ProtocolDriver(),
+      { validateDecrypted: throwingValidator }
+    );
+
+    const events: GanCubeEvent[] = [];
+    conn.events$.subscribe((e: GanCubeEvent) => events.push(e));
+
+    // First frame makes the validator throw; the chain must survive it.
+    state.notify(gen4Facelets(0));
+    await tick();
+    // Second frame must still be decoded and emitted.
+    state.notify(gen4Facelets(1));
+    await tick();
+    await tick();
+
+    expect(events.some((e) => e.type === 'FACELETS')).toBe(true);
+    await conn.disconnect();
+  });
+});
