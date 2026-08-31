@@ -61,6 +61,8 @@ export type WaitForManufacturerDataOptions = {
      * otherwise. Pass `false` when the address is actually needed.
      */
     earlyExitOnEmptyFirstAdvertisement?: boolean;
+    /** Resolves `null` immediately when aborted; the caller decides whether that is an error. */
+    signal?: AbortSignal;
 };
 
 /**
@@ -78,6 +80,10 @@ export async function waitForManufacturerData(
     }
     const name = (device.name || '').trim();
     const emptyFirstAdvExit = options?.earlyExitOnEmptyFirstAdvertisement ?? name.startsWith('WCU_');
+    const signal = options?.signal;
+    if (signal?.aborted) {
+        return null;
+    }
 
     return new Promise<BluetoothManufacturerData | null>((resolve) => {
         const abortController = new AbortController();
@@ -85,8 +91,13 @@ export async function waitForManufacturerData(
         let sawAdvertisement = false;
         let finished = false;
 
+        const onAbort = (): void => {
+            finish(null);
+        };
+
         const cleanup = (): void => {
             device.removeEventListener('advertisementreceived', onAdvEvent);
+            signal?.removeEventListener('abort', onAbort);
             abortController.abort();
             clearTimeout(maxTimer);
         };
@@ -120,6 +131,7 @@ export async function waitForManufacturerData(
         }, timeoutMs);
 
         device.addEventListener('advertisementreceived', onAdvEvent);
+        signal?.addEventListener('abort', onAbort, { once: true });
         device.watchAdvertisements({ signal: abortController.signal }).catch(() => {
             clearTimeout(maxTimer);
             finish(null);

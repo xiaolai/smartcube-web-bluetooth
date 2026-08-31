@@ -56,6 +56,22 @@ describe('moyu32Protocol.connect (MAC validation)', () => {
       })
     ).rejects.toThrow(/Invalid MAC address/);
   });
+
+  it('rejects with AbortError when the signal is already aborted', async () => {
+    const fixture = await loadFixture(FIXTURES.moyu32_my33_noGyro);
+    const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'moyu32_abort', maxAutoFlushNotifies: 0 });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      moyu32Protocol.connect(device, undefined, {
+        serviceUuids: serviceUuidsFromFixture(fixture),
+        advertisementManufacturerData: null,
+        enableAddressSearch: false,
+        onStatus: undefined,
+        signal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
 });
 
 describe('moyu32Protocol.connect (capture replay)', () => {

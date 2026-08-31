@@ -2,6 +2,7 @@ import { filter, take, TimeoutError, type Subscription } from 'rxjs';
 import { buildRequestDeviceOptions } from './attachment/build-picker-options';
 import { collectPrimaryServiceUuids } from './attachment/gatt-snapshot';
 import { resolveProtocolByGatt } from './attachment/profile-rank';
+import { abortError, isAbortError, throwIfAborted } from './attachment/abort';
 import {
     removeCachedMacForDevice,
     setCachedMacForDevice,
@@ -10,7 +11,7 @@ import {
 import type { ConnectSmartCubeOptions, DeviceSelectionMode } from './attachment/types';
 import type { MacAddressProvider, SmartCubeConnection, SmartCubeEvent } from './types';
 import { CubieCube } from './cubie-cube';
-import { getRegisteredProtocols } from './protocol';
+import { getRegisteredProtocols, type SmartCubeProtocol } from './protocol';
 
 /**
  * MoYu-style payloads always yield 54-char FACELETS from {U,F,R,B,L,D} even when AES decrypt is wrong;
@@ -79,12 +80,12 @@ function waitForVerifiedCubeEvent(
         };
 
         const onAbort = (): void => {
-            finish(() => reject(new DOMException('Aborted', 'AbortError')));
+            finish(() => reject(abortError()));
         };
 
         if (signal) {
             if (signal.aborted) {
-                finish(() => reject(new DOMException('Aborted', 'AbortError')));
+                finish(() => reject(abortError()));
                 return;
             }
             signal.addEventListener('abort', onAbort, { once: true });
@@ -129,6 +130,19 @@ function normalizeOptions(
     return arg;
 }
 
+/**
+ * True when the selected device could belong to a protocol that must learn its MAC address.
+ * When every name-matching protocol leaves `needsMac` unset, the pre-connect advertisement
+ * pass is pure latency and is skipped. An unrecognised name keeps the pass (conservative).
+ */
+function deviceMayNeedMac(protocols: SmartCubeProtocol[], device: BluetoothDevice): boolean {
+    const matching = protocols.filter((p) => p.matchesDevice(device));
+    if (matching.length === 0) {
+        return true;
+    }
+    return matching.some((p) => p.needsMac === true);
+}
+
 export async function connectSmartCube(
     arg?: MacAddressProvider | ConnectSmartCubeOptions
 ): Promise<SmartCubeConnection> {
@@ -147,36 +161,38 @@ export async function connectSmartCube(
 
     const device = await navigator.bluetooth.requestDevice(requestOptions);
 
-    opts.onStatus?.('Reading advertisements…');
-    const advertisementManufacturerData = await waitForManufacturerData(
-        device,
-        opts.enableAddressSearch ? 8000 : 2500
-    );
-
-    opts.onStatus?.('Connecting…');
-    const serviceUuids = await collectPrimaryServiceUuids(device);
-
-    const protocol = resolveProtocolByGatt(protocols, serviceUuids, device);
-
-    if (!protocol) {
-        try {
-            device.gatt?.disconnect();
-        } catch {
-            /* ignore */
-        }
-        throw new Error("Selected device doesn't match any registered smartcube protocol");
-    }
-
-    const context = {
-        serviceUuids,
-        advertisementManufacturerData,
-        enableAddressSearch: opts.enableAddressSearch === true,
-        onStatus: opts.onStatus,
-        signal: opts.signal,
-    };
-
     let conn: SmartCubeConnection;
     try {
+        throwIfAborted(opts.signal);
+
+        let advertisementManufacturerData: BluetoothManufacturerData | null = null;
+        if (deviceMayNeedMac(protocols, device)) {
+            opts.onStatus?.('Reading advertisements…');
+            advertisementManufacturerData = await waitForManufacturerData(
+                device,
+                opts.enableAddressSearch ? 8000 : 2500,
+                { signal: opts.signal }
+            );
+            throwIfAborted(opts.signal);
+        }
+
+        opts.onStatus?.('Connecting…');
+        const serviceUuids = await collectPrimaryServiceUuids(device, { signal: opts.signal });
+
+        const protocol = resolveProtocolByGatt(protocols, serviceUuids, device);
+        if (!protocol) {
+            throw new Error("Selected device doesn't match any registered smartcube protocol");
+        }
+        throwIfAborted(opts.signal);
+
+        const context = {
+            serviceUuids,
+            advertisementManufacturerData,
+            enableAddressSearch: opts.enableAddressSearch === true,
+            onStatus: opts.onStatus,
+            signal: opts.signal,
+        };
+
         conn = await protocol.connect(device, opts.macAddressProvider, context);
     } catch (e) {
         try {
@@ -197,7 +213,7 @@ export async function connectSmartCube(
             requestFreshStateForMacVerify(conn);
             await verifyPromise;
         } catch (e) {
-            const aborted = e instanceof DOMException && e.name === 'AbortError';
+            const aborted = isAbortError(e);
             if (!aborted) {
                 removeCachedMacForDevice(device);
             }

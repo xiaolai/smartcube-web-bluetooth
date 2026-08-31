@@ -171,6 +171,9 @@ export class TrafficReplayer {
         await new Promise<void>((r) => setTimeout(r, 0));
       }
     }
+    // Drivers may process notifications on a promise chain; a macrotask turn lets every queued
+    // handler run before the caller inspects the collected events.
+    await new Promise<void>((r) => setTimeout(r, 0));
   }
 
   private flushNotifiesUntilNextIo(): void {

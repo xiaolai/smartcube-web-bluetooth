@@ -43,4 +43,15 @@ describe('collectPrimaryServiceUuids', () => {
     await expectation;
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('rejects with AbortError promptly when aborted during a hung connect', async () => {
+    const device = deviceWithGatt(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const p = collectPrimaryServiceUuids(device, { signal: controller.signal });
+    const expectation = expect(p).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(50);
+    controller.abort();
+    await expectation;
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

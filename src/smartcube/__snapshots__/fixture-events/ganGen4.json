@@ -19,9 +19,9 @@
   "counts": {
     "GYRO": 111,
     "FACELETS": 12,
+    "MOVE": 30,
     "BATTERY": 1,
     "HARDWARE": 1,
-    "MOVE": 30,
     "DISCONNECT": 1
   },
   "gyro": {
@@ -92,134 +92,10 @@
     {
       "i": 12,
       "type": "GYRO*",
-      "count": 11
-    },
-    {
-      "i": 23,
-      "type": "FACELETS",
-      "facelets": "UUUUUUFFFUBBRRRRRRRRRFFDFFDDDBDDBDDBFFDLLLLLLLLLUBBUBB"
-    },
-    {
-      "i": 24,
-      "type": "GYRO*",
-      "count": 10
-    },
-    {
-      "i": 34,
-      "type": "FACELETS",
-      "facelets": "FFRUULUULFFBRRLRRFLRDFFDFFDRRBDDBDDRLBBLLDLLDUUUUBBUBB"
-    },
-    {
-      "i": 35,
-      "type": "GYRO*",
-      "count": 11
-    },
-    {
-      "i": 46,
-      "type": "FACELETS",
-      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDRRRLLLLLLLDLFDBBBBB"
-    },
-    {
-      "i": 47,
-      "type": "GYRO*",
-      "count": 10
-    },
-    {
-      "i": 57,
-      "type": "FACELETS",
-      "facelets": "UUUUUULLLURRURRURRFFFFFFFFFRRRDDDDDDLLDLLDLLDBBBBBBBBB"
-    },
-    {
-      "i": 58,
-      "type": "GYRO*",
-      "count": 11
-    },
-    {
-      "i": 69,
-      "type": "FACELETS",
-      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
-    },
-    {
-      "i": 70,
-      "type": "GYRO*",
-      "count": 10
-    },
-    {
-      "i": 80,
-      "type": "FACELETS",
-      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
-    },
-    {
-      "i": 81,
-      "type": "GYRO*",
-      "count": 3
-    },
-    {
-      "i": 84,
-      "type": "BATTERY",
-      "batteryLevel": 37
-    },
-    {
-      "i": 85,
-      "type": "GYRO*",
       "count": 8
     },
     {
-      "i": 93,
-      "type": "FACELETS",
-      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
-    },
-    {
-      "i": 94,
-      "type": "GYRO*",
-      "count": 2
-    },
-    {
-      "i": 96,
-      "type": "HARDWARE",
-      "hardwareName": "GANi4",
-      "softwareVersion": "1.12",
-      "hardwareVersion": "1.0",
-      "productDate": "2025-12-11",
-      "gyroSupported": true
-    },
-    {
-      "i": 97,
-      "type": "GYRO*",
-      "count": 8
-    },
-    {
-      "i": 105,
-      "type": "FACELETS",
-      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
-    },
-    {
-      "i": 106,
-      "type": "GYRO*",
-      "count": 2
-    },
-    {
-      "i": 108,
-      "type": "FACELETS",
-      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
-    },
-    {
-      "i": 109,
-      "type": "GYRO*",
-      "count": 9
-    },
-    {
-      "i": 118,
-      "type": "FACELETS",
-      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
-    },
-    {
-      "i": 119,
-      "type": "GYRO*",
-      "count": 6
-    },
-    {
-      "i": 125,
+      "i": 20,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -228,7 +104,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 126,
+      "i": 21,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 23,
       "type": "MOVE",
       "face": 0,
       "direction": 0,
@@ -237,7 +118,17 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 127,
+      "i": 24,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 25,
+      "type": "FACELETS",
+      "facelets": "UUUUUUFFFUBBRRRRRRRRRFFDFFDDDBDDBDDBFFDLLLLLLLLLUBBUBB"
+    },
+    {
+      "i": 26,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -246,7 +137,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 128,
+      "i": 27,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 28,
       "type": "MOVE",
       "face": 0,
       "direction": 1,
@@ -255,7 +151,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 129,
+      "i": 29,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 30,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -264,7 +165,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 130,
+      "i": 31,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 32,
       "type": "MOVE",
       "face": 2,
       "direction": 0,
@@ -273,7 +179,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 131,
+      "i": 33,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 34,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -282,7 +193,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 132,
+      "i": 35,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 36,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -291,7 +207,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 133,
+      "i": 37,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 38,
       "type": "MOVE",
       "face": 0,
       "direction": 1,
@@ -300,7 +221,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 134,
+      "i": 39,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 40,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -309,7 +235,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 135,
+      "i": 41,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 43,
       "type": "MOVE",
       "face": 0,
       "direction": 1,
@@ -318,7 +249,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 136,
+      "i": 44,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 45,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -327,7 +263,17 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 137,
+      "i": 46,
+      "type": "FACELETS",
+      "facelets": "FFRUULUULFFBRRLRRFLRDFFDFFDRRBDDBDDRLBBLLDLLDUUUUBBUBB"
+    },
+    {
+      "i": 47,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 48,
       "type": "MOVE",
       "face": 0,
       "direction": 0,
@@ -336,7 +282,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 138,
+      "i": 49,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 50,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -345,7 +296,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 139,
+      "i": 51,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 52,
       "type": "MOVE",
       "face": 2,
       "direction": 1,
@@ -354,7 +310,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 140,
+      "i": 53,
+      "type": "GYRO*",
+      "count": 3
+    },
+    {
+      "i": 56,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -363,7 +324,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 141,
+      "i": 57,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 58,
       "type": "MOVE",
       "face": 0,
       "direction": 0,
@@ -372,7 +338,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 142,
+      "i": 59,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 60,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -381,7 +352,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 143,
+      "i": 61,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 62,
       "type": "MOVE",
       "face": 0,
       "direction": 1,
@@ -390,7 +366,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 144,
+      "i": 63,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 64,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -399,7 +380,22 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 145,
+      "i": 65,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 66,
+      "type": "FACELETS",
+      "facelets": "UUBUUBUUBURRRRRRBUFFLFFFFFFDDDDDUDDRRRLLLLLLLDLFDBBBBB"
+    },
+    {
+      "i": 67,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 68,
       "type": "MOVE",
       "face": 2,
       "direction": 0,
@@ -408,7 +404,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 146,
+      "i": 69,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 70,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -417,7 +418,7 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 147,
+      "i": 71,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -426,7 +427,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 148,
+      "i": 72,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 73,
       "type": "MOVE",
       "face": 0,
       "direction": 1,
@@ -435,7 +441,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 149,
+      "i": 74,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 76,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -444,7 +455,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 150,
+      "i": 77,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 78,
       "type": "MOVE",
       "face": 0,
       "direction": 1,
@@ -453,7 +469,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 151,
+      "i": 79,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 80,
       "type": "MOVE",
       "face": 1,
       "direction": 0,
@@ -462,7 +483,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 152,
+      "i": 81,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 82,
       "type": "MOVE",
       "face": 0,
       "direction": 0,
@@ -471,7 +497,12 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 153,
+      "i": 83,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 85,
       "type": "MOVE",
       "face": 1,
       "direction": 1,
@@ -480,13 +511,112 @@
       "hasLocalTimestamp": true
     },
     {
-      "i": 154,
+      "i": 86,
+      "type": "FACELETS",
+      "facelets": "UUUUUULLLURRURRURRFFFFFFFFFRRRDDDDDDLLDLLDLLDBBBBBBBBB"
+    },
+    {
+      "i": 87,
+      "type": "GYRO*",
+      "count": 1
+    },
+    {
+      "i": 88,
       "type": "MOVE",
       "face": 2,
       "direction": 1,
       "move": "F'",
       "cubeTimestampRel": 3371,
       "hasLocalTimestamp": true
+    },
+    {
+      "i": 89,
+      "type": "GYRO*",
+      "count": 10
+    },
+    {
+      "i": 99,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 100,
+      "type": "GYRO*",
+      "count": 10
+    },
+    {
+      "i": 110,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 111,
+      "type": "GYRO*",
+      "count": 3
+    },
+    {
+      "i": 114,
+      "type": "BATTERY",
+      "batteryLevel": 37
+    },
+    {
+      "i": 115,
+      "type": "GYRO*",
+      "count": 8
+    },
+    {
+      "i": 123,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 124,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 126,
+      "type": "HARDWARE",
+      "hardwareName": "GANi4",
+      "softwareVersion": "1.12",
+      "hardwareVersion": "1.0",
+      "productDate": "2025-12-11",
+      "gyroSupported": true
+    },
+    {
+      "i": 127,
+      "type": "GYRO*",
+      "count": 8
+    },
+    {
+      "i": 135,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 136,
+      "type": "GYRO*",
+      "count": 2
+    },
+    {
+      "i": 138,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 139,
+      "type": "GYRO*",
+      "count": 9
+    },
+    {
+      "i": 148,
+      "type": "FACELETS",
+      "facelets": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+    },
+    {
+      "i": 149,
+      "type": "GYRO*",
+      "count": 6
     },
     {
       "i": 155,
