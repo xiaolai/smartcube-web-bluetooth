@@ -13,11 +13,30 @@ type SmartCubeMoveEvent = {
     localTimestamp: number | null;
     /** Cube-internal clock in milliseconds where the cube reports one, otherwise null; not comparable across brands (see cubeTimestampLinearFit) */
     cubeTimestamp: number | null;
+    /**
+     * The cube's own move counter, where the protocol has one. Undefined otherwise — currently
+     * only the GAN protocols number their moves.
+     *
+     * Rolling and modulo 256, so compare with `(a - b) & 0xFF` rather than `>`; a plain
+     * comparison misses every gap that crosses the wrap.
+     *
+     * Why it is worth exposing even though this library never emits a gap: a consumer that also
+     * receives FACELETS needs to know WHICH move a given snapshot reflects, and moves and
+     * snapshots share this counter. Without it a consumer cannot tell a snapshot taken before a
+     * move from one taken after it, and anything timing a solve from those two streams is
+     * measuring an interval it cannot vouch for. A consumer cannot reconstruct this by counting
+     * the moves it received — that orders what arrived, while this says what the CUBE counted.
+     */
+    serial?: number;
 };
 
 type SmartCubeFaceletsEvent = {
     type: "FACELETS";
     facelets: string;
+    /** The move counter this state reflects, where the protocol reports one (GAN only today).
+     *  Shares its numbering with `SmartCubeMoveEvent.serial`, which is what makes it possible to
+     *  order a snapshot against the move stream. */
+    serial?: number;
 };
 
 type SmartCubeGyroEvent = {
