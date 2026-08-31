@@ -541,5 +541,45 @@
       "i": 276,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 0,
+    "connected": true,
+    "facelets": null,
+    "battery": null,
+    "hardware": null,
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 4,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 517
+    },
+    "battery": {
+      "value": 100,
+      "timestamp": 475
+    },
+    "hardware": {
+      "timestamp": 498,
+      "hardwareName": "uiFp 753",
+      "softwareVersion": "8.62",
+      "hardwareVersion": "0.5",
+      "gyroSupported": true
+    },
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  }
 }

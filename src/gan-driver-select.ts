@@ -7,9 +7,11 @@ import {
     isValidGanGen4Packet,
 } from './gan-gen234-packet-validate';
 import { normalizeUuid } from './smartcube/attachment/normalize-uuid';
+import { Subject } from 'rxjs';
 import {
     BluetoothDeviceWithMAC,
     GanCubeConnection,
+    GanCubeEvent,
     GanCubeClassicConnection,
     GanGen2ProtocolDriver,
     GanGen3ProtocolDriver,
@@ -46,7 +48,8 @@ export async function createGanClassicConnection(
     device: BluetoothDeviceWithMAC,
     gatt: BluetoothRemoteGATTServer,
     serviceUuids: ReadonlySet<string>,
-    mac: string
+    mac: string,
+    options?: { events$?: Subject<GanCubeEvent> }
 ): Promise<{ conn: GanCubeConnection; generation: GanGeneration } | null> {
     // MAC bytes in reverse order salt the per-generation AES key/iv.
     const salt = macStringToSaltOrThrow(mac);
@@ -100,7 +103,7 @@ export async function createGanClassicConnection(
             stateCharacteristic,
             encrypter,
             setup.createDriver(),
-            { validateDecrypted: setup.validate }
+            { validateDecrypted: setup.validate, events$: options?.events$ }
         );
         return { conn, generation: setup.generation };
     }

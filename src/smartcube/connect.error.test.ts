@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import { connectSmartCube } from './connect';
 import { registerProtocol, getRegisteredProtocols, type SmartCubeProtocol } from './protocol';
-import type { SmartCubeCapabilities, SmartCubeCommand, SmartCubeConnection, SmartCubeEvent } from './types';
+import type { SmartCubeCapabilities, SmartCubeCommand, SmartCubeConnection, SmartCubeEvent, SmartCubeSnapshot } from './types';
 import { FIXTURES, loadFixture } from '../test/fixtures';
 import { installMockBluetoothFromFixture } from '../test/bluetooth-mock';
 import * as addressHints from './attachment/address-hints';
@@ -61,6 +61,8 @@ describe('connectSmartCube (error paths)', () => {
             protocol: { id: 'dummy', name: 'Dummy' },
             capabilities: caps,
             events$,
+            state$: new Subject<SmartCubeSnapshot>(),
+            getSnapshot: () => ({ revision: 0, connected: true, facelets: null, battery: null, hardware: null, capabilities: caps }),
             sendCommand: async (_cmd: SmartCubeCommand) => {
               // Intentionally do not emit FACELETS (verification should time out).
             },
@@ -119,6 +121,8 @@ describe('connectSmartCube (error paths)', () => {
             protocol: { id: 'dummy', name: 'Dummy' },
             capabilities: { gyroscope: false, battery: false, facelets: true, hardware: false, reset: false },
             events$,
+            state$: new Subject<SmartCubeSnapshot>(),
+            getSnapshot: () => ({ revision: 0, connected: true, facelets: null, battery: null, hardware: null, capabilities: { gyroscope: false, battery: false, facelets: true, hardware: false, reset: false } }),
             sendCommand: async () => {},
             disconnect: async () => {
               events$.complete();

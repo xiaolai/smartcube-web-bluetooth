@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { SmartCubeCapabilities, SmartCubeEvent } from './types';
+import type { SmartCubeCapabilities, SmartCubeEvent, SmartCubeSnapshot } from './types';
 import type { SmartCubeProtocol } from './protocol';
 import { FIXTURES, loadFixture } from '../test/fixtures';
 import { installMockBluetoothFromFixture } from '../test/bluetooth-mock';
@@ -65,6 +65,26 @@ type FixtureSnapshot = {
     gyro: { count: number; checksum: string; first: Quaternion[]; last: Quaternion[] };
     events: SnapshotEvent[];
 };
+
+type SnapState = {
+    revision: number;
+    connected: boolean;
+    facelets: { value: string; timestamp: number } | null;
+    battery: { value: number; timestamp: number } | null;
+    hardware: Record<string, unknown> | null;
+    capabilities: SmartCubeCapabilities;
+};
+
+function normaliseState(s: SmartCubeSnapshot): SnapState {
+    return {
+        revision: s.revision,
+        connected: s.connected,
+        facelets: s.facelets ? { ...s.facelets } : null,
+        battery: s.battery ? { ...s.battery } : null,
+        hardware: s.hardware ? { ...s.hardware } : null,
+        capabilities: { ...s.capabilities },
+    };
+}
 
 function round6(q: Quaternion): Quaternion {
     const r = (n: number): number => Math.round(n * 1e6) / 1e6 || 0;
@@ -181,15 +201,33 @@ describe('fixture event snapshots (full-field characterisation)', () => {
                 signal: undefined,
             });
             const capsAtConnect = { ...conn.capabilities };
+            const stateAtConnect = normaliseState(conn.getSnapshot());
 
             const raw: SmartCubeEvent[] = [];
             const sub = conn.events$.subscribe({ next: (e) => raw.push(e) });
             await replayer.drainNotificationsAsync();
             const capsAfter = { ...conn.capabilities };
+            const stateAfterDrain = normaliseState(conn.getSnapshot());
+
+            // The snapshot mirrors the last observed event of each cacheable type.
+            const lastFaceletsEvent = [...raw].reverse().find((e) => e.type === 'FACELETS');
+            if (lastFaceletsEvent && lastFaceletsEvent.type === 'FACELETS') {
+                expect(stateAfterDrain.facelets?.value).toBe(lastFaceletsEvent.facelets);
+            }
+            const lastBatteryEvent = [...raw].reverse().find((e) => e.type === 'BATTERY');
+            if (lastBatteryEvent && lastBatteryEvent.type === 'BATTERY') {
+                expect(stateAfterDrain.battery?.value).toBe(lastBatteryEvent.batteryLevel);
+            }
+            expect(stateAfterDrain.capabilities).toEqual(capsAfter);
+
             await conn.disconnect();
             sub.unsubscribe();
 
-            const snapshot = summarise(c.key, conn.protocol.id, conn.deviceName, capsAtConnect, capsAfter, raw);
+            const snapshot = {
+                ...summarise(c.key, conn.protocol.id, conn.deviceName, capsAtConnect, capsAfter, raw),
+                stateAtConnect,
+                stateAfterDrain,
+            };
             await expect(JSON.stringify(snapshot, null, 2) + '\n').toMatchFileSnapshot(
                 `./__snapshots__/fixture-events/${c.key}.json`
             );

@@ -551,5 +551,45 @@
       "i": 216,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 0,
+    "connected": true,
+    "facelets": null,
+    "battery": null,
+    "hardware": null,
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 6,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 406
+    },
+    "battery": {
+      "value": 90,
+      "timestamp": 433
+    },
+    "hardware": {
+      "timestamp": 381,
+      "hardwareName": "GANuiB3C",
+      "softwareVersion": "7.17",
+      "hardwareVersion": "0.3",
+      "gyroSupported": true
+    },
+    "capabilities": {
+      "gyroscope": true,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": true
+    }
+  }
 }

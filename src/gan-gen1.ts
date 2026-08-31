@@ -130,7 +130,7 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         return this.device.name || 'GAN356i v1';
     }
 
-    static async create(device: BluetoothDevice): Promise<GanGen1CubeConnection> {
+    static async create(device: BluetoothDevice, externalEvents$?: Subject<GanCubeEvent>): Promise<GanGen1CubeConnection> {
         const gatt = device.gatt;
         if (!gatt?.connected) {
             throw new Error('GATT must be connected before GAN gen1 setup');
@@ -161,7 +161,7 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         const chrBattery = await primary.getCharacteristic(def.GAN_GEN1_CHR_BATTERY);
         const chrGyroNotify = await primary.getCharacteristic(def.GAN_GEN1_CHR_GYRO_NOTIFY);
 
-        const events$ = new Subject<GanCubeEvent>();
+        const events$ = externalEvents$ ?? new Subject<GanCubeEvent>();
         const conn = new GanGen1CubeConnection(
             device,
             encrypter,

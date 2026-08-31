@@ -509,5 +509,57 @@
       "i": 69,
       "type": "DISCONNECT"
     }
-  ]
+  ],
+  "stateAtConnect": {
+    "revision": 8,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUUBBBRRRRRRRRRFFFFFFDDDDDDDDDFFFLLLLLLLLLBBBBBB",
+      "timestamp": 16
+    },
+    "battery": {
+      "value": 99,
+      "timestamp": 6
+    },
+    "hardware": {
+      "timestamp": 12,
+      "hardwareName": "WCU_MY33",
+      "softwareVersion": "3.1",
+      "hardwareVersion": "3.7",
+      "gyroSupported": false
+    },
+    "capabilities": {
+      "gyroscope": false,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": false
+    }
+  },
+  "stateAfterDrain": {
+    "revision": 46,
+    "connected": true,
+    "facelets": {
+      "value": "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+      "timestamp": 160
+    },
+    "battery": {
+      "value": 97,
+      "timestamp": 150
+    },
+    "hardware": {
+      "timestamp": 156,
+      "hardwareName": "WCU_MY33",
+      "softwareVersion": "3.1",
+      "hardwareVersion": "3.7",
+      "gyroSupported": false
+    },
+    "capabilities": {
+      "gyroscope": false,
+      "battery": true,
+      "facelets": true,
+      "hardware": true,
+      "reset": false
+    }
+  }
 }
