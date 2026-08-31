@@ -128,7 +128,7 @@ export function isValidQiYiDecryptedPacket(payload: Uint8Array): boolean {
             if (payload.length < 16) {
                 return false;
             }
-            const dv = new DataView(payload.buffer, payload.byteOffset);
+            const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
             const qx = dv.getInt16(6, false);
             const qy = dv.getInt16(8, false);
             const qz = dv.getInt16(10, false);

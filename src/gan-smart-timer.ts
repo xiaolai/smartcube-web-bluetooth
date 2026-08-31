@@ -122,12 +122,27 @@ function crc16ccit(buff: ArrayBufferLike): number {
  */
 function validateEventData(data: DataView): boolean {
     try {
-        if (data?.byteLength === 0 || data.getUint8(0) !== 0xFE) {
+        // Magic byte, at least a state byte at offset 3, and the trailing 16-bit CRC.
+        if (!data || data.byteLength < 6 || data.getUint8(0) !== 0xFE) {
             return false;
         }
         const eventCRC = data.getUint16(data.byteLength - 2, true);
-        const calculatedCRC = crc16ccit(data.buffer.slice(2, data.byteLength - 2));
-        return eventCRC === calculatedCRC;
+        // Slice relative to the view's bounds: buffer.slice(2, …) ignores byteOffset and
+        // would CRC unrelated bytes when the DataView is a subview of a larger buffer.
+        const calculatedCRC = crc16ccit(
+            data.buffer.slice(data.byteOffset + 2, data.byteOffset + data.byteLength - 2),
+        );
+        if (eventCRC !== calculatedCRC) {
+            return false;
+        }
+        const state = data.getUint8(3);
+        if (GanTimerState[state] === undefined) {
+            return false; // CRC-valid frame carrying an undocumented state
+        }
+        if (state === GanTimerState.STOPPED && data.byteLength < 10) {
+            return false; // STOPPED carries a 4-byte recorded time at offset 4
+        }
+        return true;
     } catch {
         return false;
     }

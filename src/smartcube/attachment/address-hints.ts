@@ -142,12 +142,20 @@ export async function waitForManufacturerData(
 /** GAN-style MAC from manufacturer data (last 6 bytes, reversed order in payload). */
 export function macFromGanManufacturerData(mf: BluetoothManufacturerData | DataView): string | null {
     function getBytes(manufacturerData: BluetoothManufacturerData | DataView): DataView | undefined {
+        // Slice relative to the view's own bounds: a manufacturer-data DataView can be a
+        // subview of a larger advertisement buffer, and buffer.slice(0, …) would read
+        // unrelated bytes and derive the wrong MAC.
         if (manufacturerData instanceof DataView) {
-            return new DataView(manufacturerData.buffer.slice(2, 11));
+            const start = manufacturerData.byteOffset + 2;
+            const end = manufacturerData.byteOffset + Math.min(manufacturerData.byteLength, 11);
+            return new DataView(manufacturerData.buffer.slice(start, Math.max(start, end)));
         }
         for (const id of ganDef.GAN_CIC_LIST) {
             if (manufacturerData.has(id)) {
-                return new DataView(manufacturerData.get(id)!.buffer.slice(0, 9));
+                const value = manufacturerData.get(id)!;
+                const start = value.byteOffset;
+                const end = value.byteOffset + Math.min(value.byteLength, 9);
+                return new DataView(value.buffer.slice(start, end));
             }
         }
         return undefined;

@@ -141,3 +141,51 @@ describe('connectGanTimer', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('frame validation hardening', () => {
+  it('validates the CRC correctly when the notification DataView is a subview', async () => {
+    const { state } = installMockTimer();
+    const conn = await connectGanTimer();
+    const events: GanTimerEvent[] = [];
+    conn.events$.subscribe({ next: (e) => events.push(e) });
+
+    // Embed a valid frame at a nonzero offset of a larger backing buffer: CRC computed
+    // via buffer.slice(2, …) (the old behavior) would checksum the garbage prefix.
+    const frame = timerFrame(GanTimerState.RUNNING);
+    const backing = new Uint8Array(4 + frame.length + 4).fill(0xa5);
+    backing.set(frame, 4);
+    state.value = new DataView(backing.buffer, 4, frame.length);
+    state.dispatchEvent(new Event('characteristicvaluechanged'));
+
+    expect(events.map((e) => e.state)).toEqual([GanTimerState.RUNNING]);
+  });
+
+  it('drops a CRC-valid frame carrying an undocumented state value', async () => {
+    const { state } = installMockTimer();
+    const conn = await connectGanTimer();
+    const events: GanTimerEvent[] = [];
+    conn.events$.subscribe({ next: (e) => events.push(e) });
+
+    state.notify(timerFrame(99 as GanTimerState));
+    state.notify(timerFrame(GanTimerState.IDLE));
+
+    expect(events.map((e) => e.state)).toEqual([GanTimerState.IDLE]);
+  });
+
+  it('drops a CRC-valid STOPPED frame too short to carry a recorded time', async () => {
+    const { state } = installMockTimer();
+    const conn = await connectGanTimer();
+    const events: GanTimerEvent[] = [];
+    const onError = vi.fn();
+    conn.events$.subscribe({ next: (e) => events.push(e), error: onError });
+
+    // 6-byte STOPPED frame: magic, len, tag, state, crc16 — no time payload at offset 4.
+    const body = [0x03, GanTimerState.STOPPED];
+    const crc = crc16ccit(body);
+    state.notify([0xfe, 0x06, ...body, crc & 0xff, crc >> 8]);
+    state.notify(timerFrame(GanTimerState.IDLE));
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(events.map((e) => e.state)).toEqual([GanTimerState.IDLE]);
+  });
+});

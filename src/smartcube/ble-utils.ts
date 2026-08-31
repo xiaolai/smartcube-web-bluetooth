@@ -25,11 +25,16 @@ function extractMacFromManufacturerData(
     let dataView: DataView | undefined;
 
     if (mfData instanceof DataView) {
-        dataView = new DataView(mfData.buffer.slice(2));
+        // Slice relative to the view's bounds: buffer.slice(2) ignores byteOffset and
+        // reads unrelated bytes when the DataView is a subview of a larger buffer.
+        dataView = new DataView(
+            mfData.buffer.slice(mfData.byteOffset + 2, mfData.byteOffset + mfData.byteLength),
+        );
     } else {
         for (const id of cicList) {
-            if (mfData.has(id)) {
-                dataView = mfData.get(id);
+            const value = mfData.get(id);
+            if (value && value.byteLength >= 6) {
+                dataView = value;
                 break;
             }
         }
@@ -43,7 +48,7 @@ function extractMacFromManufacturerData(
             mac.push((dataView.getUint8(i) + 0x100).toString(16).slice(1));
         }
     } else {
-        for (let i = dataView.byteLength - 1; i >= dataView.byteLength - 6; i--) {
+        for (let i = dataView.byteLength - 6; i < dataView.byteLength; i++) {
             mac.push((dataView.getUint8(i) + 0x100).toString(16).slice(1));
         }
     }
