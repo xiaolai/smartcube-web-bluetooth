@@ -2,7 +2,9 @@
 import aesjs from 'aes-js';
 
 // aes-js ships CommonJS only; a default import resolves in Node ESM, CJS and every bundler.
-const { ModeOfOperation } = aesjs;
+
+/** aes-js block-cipher core with a precomputed key schedule (its typings only expose ByteSource). */
+type AesBlockCipher = { encrypt(block: number[]): number[]; decrypt(block: number[]): number[] };
 
 /**
  * Common cube encrypter interface
@@ -21,6 +23,7 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
 
     private _key: Uint8Array;
     private _iv: Uint8Array;
+    private readonly aes: AesBlockCipher;
 
     constructor(key: Uint8Array, iv: Uint8Array, salt: Uint8Array) {
         if (key.length != 16)
@@ -36,20 +39,28 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
             this._key[i] = (key[i] + salt[i]) % 0xFF;
             this._iv[i] = (iv[i] + salt[i]) % 0xFF;
         }
+        this.aes = new aesjs.AES([...this._key]) as unknown as AesBlockCipher;
     }
 
-    /** Encrypt 16-byte buffer chunk starting at offset using AES-128-CBC */
+    /**
+     * Encrypt a 16-byte chunk at offset. Equivalent to single-block AES-128-CBC with the fixed
+     * iv (E(chunk XOR iv)), but reuses one precomputed key schedule instead of rebuilding the
+     * cipher for every chunk of every packet.
+     */
     private encryptChunk(buffer: Uint8Array, offset: number): void {
-        var cipher = new ModeOfOperation.cbc(this._key, this._iv);
-        var chunk = cipher.encrypt(buffer.subarray(offset, offset + 16));
-        buffer.set(chunk, offset);
+        const block: number[] = new Array(16);
+        for (let i = 0; i < 16; i++) {
+            block[i] = buffer[offset + i]! ^ this._iv[i]!;
+        }
+        buffer.set(this.aes.encrypt(block), offset);
     }
 
-    /** Decrypt 16-byte buffer chunk starting at offset using AES-128-CBC */
+    /** Decrypt a 16-byte chunk at offset: single-block AES-128-CBC, D(chunk) XOR iv. */
     private decryptChunk(buffer: Uint8Array, offset: number): void {
-        var cipher = new ModeOfOperation.cbc(this._key, this._iv);
-        var chunk = cipher.decrypt(buffer.subarray(offset, offset + 16));
-        buffer.set(chunk, offset);
+        const decrypted = this.aes.decrypt(Array.from(buffer.subarray(offset, offset + 16)));
+        for (let i = 0; i < 16; i++) {
+            buffer[offset + i] = decrypted[i]! ^ this._iv[i]!;
+        }
     }
 
     encrypt(data: Uint8Array): Uint8Array {
