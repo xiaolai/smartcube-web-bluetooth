@@ -86,9 +86,9 @@ function makeTime(min: number, sec: number, msec: number): GanTimerTime {
  * Construct time object from raw event data
  */
 function makeTimeFromRaw(data: DataView, offset: number): GanTimerTime {
-    var min = data.getUint8(offset);
-    var sec = data.getUint8(offset + 1);
-    var msec = data.getUint16(offset + 2, true);
+    const min = data.getUint8(offset);
+    const sec = data.getUint8(offset + 1);
+    const msec = data.getUint16(offset + 2, true);
     return makeTime(min, sec, msec);
 }
 
@@ -96,9 +96,9 @@ function makeTimeFromRaw(data: DataView, offset: number): GanTimerTime {
  * Construct time object from milliseconds timestamp
  */
 function makeTimeFromTimestamp(timestamp: number): GanTimerTime {
-    var min = Math.trunc(timestamp / 60000);
-    var sec = Math.trunc(timestamp % 60000 / 1000);
-    var msec = Math.trunc(timestamp % 1000);
+    const min = Math.trunc(timestamp / 60000);
+    const sec = Math.trunc(timestamp % 60000 / 1000);
+    const msec = Math.trunc(timestamp % 1000);
     return makeTime(min, sec, msec);
 }
 
@@ -106,8 +106,8 @@ function makeTimeFromTimestamp(timestamp: number): GanTimerTime {
  * Calculate ArrayBuffer checksum using CRC-16/CCIT-FALSE algorithm variation
  */
 function crc16ccit(buff: ArrayBufferLike): number {
-    var dataView = new DataView(buff);
-    var crc: number = 0xFFFF;
+    const dataView = new DataView(buff);
+    let crc: number = 0xFFFF;
     for (let i = 0; i < dataView.byteLength; ++i) {
         crc ^= dataView.getUint8(i) << 8;
         for (let j = 0; j < 8; ++j) {
@@ -122,13 +122,13 @@ function crc16ccit(buff: ArrayBufferLike): number {
  */
 function validateEventData(data: DataView): boolean {
     try {
-        if (data?.byteLength == 0 || data.getUint8(0) != 0xFE) {
+        if (data?.byteLength === 0 || data.getUint8(0) !== 0xFE) {
             return false;
         }
-        var eventCRC = data.getUint16(data.byteLength - 2, true);
-        var calculatedCRC = crc16ccit(data.buffer.slice(2, data.byteLength - 2));
-        return eventCRC == calculatedCRC;
-    } catch (err) {
+        const eventCRC = data.getUint16(data.byteLength - 2, true);
+        const calculatedCRC = crc16ccit(data.buffer.slice(2, data.byteLength - 2));
+        return eventCRC === calculatedCRC;
+    } catch {
         return false;
     }
 }
@@ -137,10 +137,10 @@ function validateEventData(data: DataView): boolean {
  * Construct event object from raw data
  */
 function buildTimerEvent(data: DataView): GanTimerEvent {
-    var evt: GanTimerEvent = {
+    const evt: GanTimerEvent = {
         state: data.getUint8(3)
     };
-    if (evt.state == GanTimerState.STOPPED) {
+    if (evt.state === GanTimerState.STOPPED) {
         evt.recordedTime = makeTimeFromRaw(data, 4);
     }
     return evt;
@@ -153,7 +153,7 @@ function buildTimerEvent(data: DataView): GanTimerEvent {
 async function connectGanTimer(): Promise<GanTimerConnection> {
 
     // Request user for the bluetooth device (popup selection dialog)
-    var device = await navigator.bluetooth.requestDevice(
+    const device = await navigator.bluetooth.requestDevice(
         {
             filters: [
                 { namePrefix: "GAN" },
@@ -165,18 +165,18 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
     );
 
     // Connect to GATT server
-    var server = await device.gatt!.connect();
+    const server = await device.gatt!.connect();
 
     // Connect to main timer service and characteristics
-    var service = await server.getPrimaryService(GAN_TIMER_SERVICE);
-    var timeCharacteristic = await service.getCharacteristic(GAN_TIMER_TIME_CHARACTERISTIC);
-    var stateCharacteristic = await service.getCharacteristic(GAN_TIMER_STATE_CHARACTERISTIC);
+    const service = await server.getPrimaryService(GAN_TIMER_SERVICE);
+    const timeCharacteristic = await service.getCharacteristic(GAN_TIMER_TIME_CHARACTERISTIC);
+    const stateCharacteristic = await service.getCharacteristic(GAN_TIMER_STATE_CHARACTERISTIC);
 
     // Subscribe to value updates of the timer state characteristic
-    var eventSubject = new Subject<GanTimerEvent>();
-    var onStateChanged = (evt: Event) => {
-        var chr: BluetoothRemoteGATTCharacteristic = <BluetoothRemoteGATTCharacteristic>evt.target;
-        var data = chr.value;
+    const eventSubject = new Subject<GanTimerEvent>();
+    const onStateChanged = (evt: Event) => {
+        const chr: BluetoothRemoteGATTCharacteristic = <BluetoothRemoteGATTCharacteristic>evt.target;
+        const data = chr.value;
         // A frame that fails the magic/CRC check is dropped; erroring the subject would
         // terminate the stream for every subscriber on a single corrupt notification.
         if (data && validateEventData(data)) {
@@ -187,8 +187,8 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
     await stateCharacteristic.startNotifications();
 
     // This action retrieves latest recorded times from timer
-    var getRecordedTimesAction = async (): Promise<GanTimerRecordedTimes> => {
-        var data = await timeCharacteristic.readValue();
+    const getRecordedTimesAction = async (): Promise<GanTimerRecordedTimes> => {
+        const data = await timeCharacteristic.readValue();
         if (!data || data.byteLength < 16) {
             throw new Error("Invalid time characteristic value received from Timer");
         }
@@ -199,7 +199,7 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
     }
 
     // Manual disconnect action
-    var disconnectAction = async () => {
+    const disconnectAction = async () => {
         device.removeEventListener('gattserverdisconnected', disconnectAction);
         stateCharacteristic.removeEventListener('characteristicvaluechanged', onStateChanged);
         await stateCharacteristic.stopNotifications().catch(() => { });

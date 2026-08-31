@@ -1,8 +1,6 @@
 import type { FixtureSession } from '../fixtures';
 import { TrafficReplayer } from './traffic-replayer';
 
-type Listener = (evt: Event) => void;
-
 class MockCharacteristic extends EventTarget {
   readonly uuid: string;
   value: DataView | null = null;
@@ -159,7 +157,7 @@ function toDataView(src: BufferSource): DataView {
     return new DataView(src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength));
   }
   // Should be unreachable for BufferSource
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+   
   throw new Error(`Unsupported BufferSource: ${src as unknown as string}`);
 }
 

@@ -43,7 +43,7 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
     const cicFilters: BluetoothLEScanFilter[] = def.GAN_CIC_LIST.map((companyIdentifier) => ({
         manufacturerData: [{ companyIdentifier }],
     }));
-    var device: BluetoothDeviceWithMAC = await navigator.bluetooth.requestDevice(
+    const device: BluetoothDeviceWithMAC = await navigator.bluetooth.requestDevice(
         {
             filters: [...nameFilters, ...cicFilters],
             optionalServices: [
@@ -59,8 +59,8 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
     );
 
     // Connect to GATT and get primary services
-    var gatt = await device.gatt!.connect();
-    var services = await gatt.getPrimaryServices();
+    const gatt = await device.gatt!.connect();
+    const services = await gatt.getPrimaryServices();
     const serviceUuidSet = new Set(services.map((s) => normalizeUuid(s.uuid)));
 
     if (hasGanGen1Profile(serviceUuidSet)) {
@@ -68,7 +68,7 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
     }
 
     // Retrieve cube MAC address needed for key salting
-    var mac = customMacAddressProvider && await customMacAddressProvider(device, false)
+    const mac = customMacAddressProvider && await customMacAddressProvider(device, false)
         || await autoRetrieveMacAddress(device)
         || customMacAddressProvider && await customMacAddressProvider(device, true);
 
