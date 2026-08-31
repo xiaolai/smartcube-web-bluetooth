@@ -4,12 +4,13 @@ import aesjs from 'aes-js';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { getCachedMacForDevice } from '../attachment/address-hints';
+import { getCachedMacForDevice, waitForManufacturerData } from '../attachment/address-hints';
+import { parseMacBytes } from '../attachment/mac-address';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
 import { SmartCubeProtocol, registerProtocol } from '../protocol';
 import { CubieCube, SOLVED_FACELET, moveDirectionFromNotation } from '../cubie-cube';
-import { now, findCharacteristic, waitForAdvertisements } from '../ble-utils';
+import { now, findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 
 const SERVICE_UUID = '0783b03e-7735-b5a0-1760-a305d2795cb0';
@@ -384,7 +385,7 @@ class Moyu32Connection implements SmartCubeConnection {
         await this.readChrct.startNotifications();
 
         // Initialize encryption with MAC
-        const macBytes = this.deviceMAC.split(/[:-\s]+/).map(c => parseInt(c, 16));
+        const macBytes = parseMacBytes(this.deviceMAC);
         this.encrypter = new Moyu32Encrypter(macBytes);
 
         await this.sendSimpleRequest(161); // Request cube info
@@ -454,7 +455,10 @@ async function connectMoyu32Device(
     }
 
     if (!mac) {
-        const mfData = await waitForAdvertisements(device, context?.enableAddressSearch ? 8000 : 5000);
+        // The first advertisement frequently carries no manufacturer data; merge frames until one does.
+        const mfData = await waitForManufacturerData(device, context?.enableAddressSearch ? 8000 : 5000, {
+            earlyExitOnEmptyFirstAdvertisement: false,
+        });
         mac = parseMoyu32MacFromMf(mfData);
     }
 

@@ -253,7 +253,16 @@ export class MoyuV1Client {
             },
         );
 
-        waiter!.sentAt = await this.sendRawRequest(body);
+        try {
+            waiter!.sentAt = await this.sendRawRequest(body);
+        } catch (e) {
+            // The request never left the host: drop the waiter so its timeout cannot
+            // later reject a promise nobody holds.
+            clearTimeout(waiter!.timeout);
+            const i = this.waiters.indexOf(waiter!);
+            if (i >= 0) this.waiters.splice(i, 1);
+            throw e;
+        }
         return result;
     }
 

@@ -21,28 +21,6 @@ function findCharacteristic(
     return null;
 }
 
-async function waitForAdvertisements(device: BluetoothDevice, timeoutMs = 5000): Promise<BluetoothManufacturerData | null> {
-    if (typeof device.watchAdvertisements !== 'function') {
-        return null;
-    }
-    return new Promise<BluetoothManufacturerData | null>((resolve) => {
-        const abortController = new AbortController();
-        const onAdvEvent = (evt: Event) => {
-            device.removeEventListener('advertisementreceived', onAdvEvent);
-            abortController.abort();
-            resolve((evt as BluetoothAdvertisingEvent).manufacturerData);
-        };
-        const onAbort = () => {
-            device.removeEventListener('advertisementreceived', onAdvEvent);
-            abortController.abort();
-            resolve(null);
-        };
-        device.addEventListener('advertisementreceived', onAdvEvent);
-        device.watchAdvertisements({ signal: abortController.signal }).catch(onAbort);
-        setTimeout(onAbort, timeoutMs);
-    });
-}
-
 function extractMacFromManufacturerData(
     mfData: BluetoothManufacturerData | DataView | null,
     cicList: number[],
@@ -78,4 +56,4 @@ function extractMacFromManufacturerData(
     return mac.join(':');
 }
 
-export { now, findCharacteristic, waitForAdvertisements, extractMacFromManufacturerData };
+export { now, findCharacteristic, extractMacFromManufacturerData };

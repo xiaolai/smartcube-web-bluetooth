@@ -1,6 +1,7 @@
 import aesjs from 'aes-js';
 import { findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
+import { parseMacBytes } from './mac-address';
 import { isValidQiYiDecryptedPacket } from './packet-sanity';
 
 const { ModeOfOperation } = aesjs;
@@ -23,7 +24,7 @@ function crc16modbus(data: number[]): number {
 
 /** Same wire as QiYiConnection.sendHello → sendMessage (wake cube for MAC validation). */
 function buildEncryptedQiYiHello(mac: string): ArrayBuffer {
-    const macBytes = mac.split(/[:-\s]+/).map((x) => parseInt(x, 16));
+    const macBytes = parseMacBytes(mac);
     const content = [0x00, 0x6b, 0x01, 0x00, 0x00, 0x22, 0x06, 0x00, 0x02, 0x08, 0x00];
     for (let i = 5; i >= 0; i--) {
         content.push(macBytes[i] ?? 0);

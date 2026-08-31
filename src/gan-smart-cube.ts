@@ -52,6 +52,7 @@ async function autoRetrieveMacAddress(device: BluetoothDevice): Promise<string |
     return new Promise<string | null>((resolve) => {
         if (typeof device.watchAdvertisements != 'function') {
             resolve(null);
+            return;
         }
         var abortController = new AbortController();
         var onAdvEvent = (evt: Event) => {

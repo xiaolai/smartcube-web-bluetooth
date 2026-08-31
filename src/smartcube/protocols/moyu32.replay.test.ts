@@ -5,6 +5,59 @@ import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
 import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { moyu32Protocol } from './moyu32';
 
+describe('moyu32Protocol.connect (MAC from advertisements)', () => {
+  it('resolves the MAC from a later advertisement when the first carries no manufacturer data', async () => {
+    const fixture = await loadFixture(FIXTURES.moyu32_my33_noGyro);
+    const { device, replayer } = installMockBluetoothFromFixture(fixture, {
+      deviceId: 'moyu32_adv',
+      maxAutoFlushNotifies: 0,
+    });
+    const mac = fixture.device.mac!;
+    // Wire format: 2-byte company id, then the address LSB-first.
+    const wire = [0x00, 0x00, ...mac.split(':').map((h) => parseInt(h, 16)).reverse()];
+    const emit = (mf: Map<number, DataView>) => {
+      const evt = new Event('advertisementreceived') as BluetoothAdvertisingEvent;
+      (evt as unknown as { manufacturerData: unknown }).manufacturerData = mf;
+      device.dispatchEvent(evt);
+    };
+    (device as unknown as { watchAdvertisements: () => Promise<void> }).watchAdvertisements = async () => {
+      emit(new Map());
+      setTimeout(() => emit(new Map([[0x0504, new DataView(Uint8Array.from(wire).buffer)]])), 5);
+    };
+
+    const conn = await moyu32Protocol.connect(device, undefined, {
+      serviceUuids: serviceUuidsFromFixture(fixture),
+      advertisementManufacturerData: null,
+      enableAddressSearch: false,
+      onStatus: undefined,
+      signal: undefined,
+    });
+    expect(conn.deviceMAC.toUpperCase()).toBe(mac.toUpperCase());
+
+    const { events, unsubscribe } = collectEvents(conn);
+    await replayer.drainNotificationsAsync();
+    unsubscribe();
+    expect(moves(events).slice(0, 10)).toEqual(fixtureExpectedMoves(fixture, 10));
+    await conn.disconnect();
+  }, 20_000);
+});
+
+describe('moyu32Protocol.connect (MAC validation)', () => {
+  it('rejects a malformed MAC from the provider before any write reaches the cube', async () => {
+    const fixture = await loadFixture(FIXTURES.moyu32_my33_noGyro);
+    const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'moyu32_badmac', maxAutoFlushNotifies: 0 });
+    await expect(
+      moyu32Protocol.connect(device, async () => 'not-a-mac', {
+        serviceUuids: serviceUuidsFromFixture(fixture),
+        advertisementManufacturerData: null,
+        enableAddressSearch: false,
+        onStatus: undefined,
+        signal: undefined,
+      })
+    ).rejects.toThrow(/Invalid MAC address/);
+  });
+});
+
 describe('moyu32Protocol.connect (capture replay)', () => {
   it('matches fixture decoded events (no gyro device)', async () => {
     const fixture = await loadFixture(FIXTURES.moyu32_my33_noGyro);

@@ -53,6 +53,16 @@ function mergeManufacturerDataInto(
     }
 }
 
+export type WaitForManufacturerDataOptions = {
+    /**
+     * Resolve `null` as soon as the first advertisement arrives without manufacturer data,
+     * instead of merging frames until the timeout. Defaults to true for `WCU_*` names (MoYu32
+     * rarely exposes useful data in the pre-connect pass; keeps connect snappy) and false
+     * otherwise. Pass `false` when the address is actually needed.
+     */
+    earlyExitOnEmptyFirstAdvertisement?: boolean;
+};
+
 /**
  * Wait for manufacturer data from advertisements (single shared listener).
  * Merges all packets until timeout: the first BLE advertisement often has an empty
@@ -60,14 +70,14 @@ function mergeManufacturerDataInto(
  */
 export async function waitForManufacturerData(
     device: BluetoothDevice,
-    timeoutMs = 5000
+    timeoutMs = 5000,
+    options?: WaitForManufacturerDataOptions
 ): Promise<BluetoothManufacturerData | null> {
     if (typeof device.watchAdvertisements !== 'function') {
         return null;
     }
     const name = (device.name || '').trim();
-    /** MoYu32-style names rarely expose useful MF in the picker; keep connect snappy. */
-    const emptyFirstAdvExit = name.startsWith('WCU_');
+    const emptyFirstAdvExit = options?.earlyExitOnEmptyFirstAdvertisement ?? name.startsWith('WCU_');
 
     return new Promise<BluetoothManufacturerData | null>((resolve) => {
         const abortController = new AbortController();
