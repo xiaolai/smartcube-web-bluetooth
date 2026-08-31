@@ -31,9 +31,11 @@ function buildFaceletsPacket(opts: {
         { offset: 0, length: 4, value: 4 }, // eventType FACELETS
         { offset: 4, length: 8, value: 0 }, // serial
     ];
-    const cp = opts.cornerPerms ?? new Array(7).fill(0);
+    // Defaults are the solved cube's REAL permutations: the validator now requires a
+    // structurally valid state, so all-zero placeholder fields would be rejected.
+    const cp = opts.cornerPerms ?? [0, 1, 2, 3, 4, 5, 6];
     const co = opts.cornerOris ?? new Array(7).fill(0);
-    const ep = opts.edgePerms ?? new Array(11).fill(0);
+    const ep = opts.edgePerms ?? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const eo = opts.edgeOris ?? new Array(11).fill(0);
     for (let i = 0; i < 7; i++) fields.push({ offset: 12 + 3 * i, length: 3, value: cp[i] });
     for (let i = 0; i < 7; i++) fields.push({ offset: 33 + 2 * i, length: 2, value: co[i] });

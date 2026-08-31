@@ -43,12 +43,18 @@ class CubieCube {
     }
 
     static EdgeMult(a: CubieCube, b: CubieCube, prod: CubieCube): void {
+        if (prod === a || prod === b) {
+            throw new Error('EdgeMult: prod must be a distinct instance (in-place multiplication corrupts input)');
+        }
         for (let ed = 0; ed < 12; ed++) {
             prod.ea[ed] = a.ea[b.ea[ed] >> 1] ^ (b.ea[ed] & 1);
         }
     }
 
     static CornMult(a: CubieCube, b: CubieCube, prod: CubieCube): void {
+        if (prod === a || prod === b) {
+            throw new Error('CornMult: prod must be a distinct instance (in-place multiplication corrupts input)');
+        }
         for (let corn = 0; corn < 8; corn++) {
             const ori = ((a.ca[b.ca[corn] & 7] >> 3) + (b.ca[corn] >> 3)) % 3;
             prod.ca[corn] = (a.ca[b.ca[corn] & 7] & 7) | (ori << 3);
@@ -88,46 +94,111 @@ class CubieCube {
     fromFacelet(facelet: string, customCFacelet?: number[][], customEFacelet?: number[][]): CubieCube | -1 {
         const cf = customCFacelet || cFacelet;
         const ef = customEFacelet || eFacelet;
-        let count = 0;
+        if (facelet.length !== 54) {
+            return -1;
+        }
         const fArr: number[] = [];
+        const colorCounts = [0, 0, 0, 0, 0, 0];
         const centers = facelet[4] + facelet[13] + facelet[22] + facelet[31] + facelet[40] + facelet[49];
         for (let i = 0; i < 54; ++i) {
             fArr[i] = centers.indexOf(facelet[i]);
             if (fArr[i] === -1) {
                 return -1;
             }
-            count += 1 << (fArr[i] << 2);
+            colorCounts[fArr[i]]++;
         }
-        if (count !== 0x999999) {
+        if (colorCounts.some((c) => c !== 9)) {
             return -1;
         }
+        // Parse into scratch arrays and require every piece to match exactly once;
+        // commit to this.ca/this.ea only after the whole state validated, so a
+        // rejected facelet string never leaves the cube partially mutated.
+        const ca = new Array<number>(8);
+        const ea = new Array<number>(12);
+        const cornerUsed = new Array<boolean>(8).fill(false);
+        const edgeUsed = new Array<boolean>(12).fill(false);
         for (let i = 0; i < 8; ++i) {
             let ori: number;
             for (ori = 0; ori < 3; ++ori) {
                 if (fArr[cf[i][ori]] === 0 || fArr[cf[i][ori]] === 3) break;
             }
+            if (ori === 3) {
+                return -1; // no U/D sticker on this corner: not a legal corner piece
+            }
             const col1 = fArr[cf[i][(ori + 1) % 3]];
             const col2 = fArr[cf[i][(ori + 2) % 3]];
+            let matched = false;
             for (let j = 0; j < 8; ++j) {
-                if (col1 === ~~(cf[j][1] / 9) && col2 === ~~(cf[j][2] / 9)) {
-                    this.ca[i] = j | ((ori % 3) << 3);
+                if (!cornerUsed[j] && col1 === ~~(cf[j][1] / 9) && col2 === ~~(cf[j][2] / 9)) {
+                    cornerUsed[j] = true;
+                    ca[i] = j | (ori << 3);
+                    matched = true;
                     break;
                 }
+            }
+            if (!matched) {
+                return -1; // unknown or duplicate corner piece
             }
         }
         for (let i = 0; i < 12; ++i) {
+            let matched = false;
             for (let j = 0; j < 12; ++j) {
+                if (edgeUsed[j]) {
+                    continue;
+                }
                 if (fArr[ef[i][0]] === ~~(ef[j][0] / 9) && fArr[ef[i][1]] === ~~(ef[j][1] / 9)) {
-                    this.ea[i] = j << 1;
+                    edgeUsed[j] = true;
+                    ea[i] = j << 1;
+                    matched = true;
                     break;
                 }
                 if (fArr[ef[i][0]] === ~~(ef[j][1] / 9) && fArr[ef[i][1]] === ~~(ef[j][0] / 9)) {
-                    this.ea[i] = j << 1 | 1;
+                    edgeUsed[j] = true;
+                    ea[i] = j << 1 | 1;
+                    matched = true;
                     break;
                 }
             }
+            if (!matched) {
+                return -1; // unknown or duplicate edge piece
+            }
         }
+        this.ca = ca;
+        this.ea = ea;
         return this;
+    }
+
+    /**
+     * Whether this state is reachable by legal turns from solved: corner orientation
+     * sum divisible by 3, edge orientation sum even, and matching permutation parity.
+     * `fromFacelet` deliberately does not enforce this — a physically twisted corner
+     * (after a pop) is a real state a cube can report.
+     */
+    isSolvable(): boolean {
+        let cornerOriSum = 0;
+        for (let c = 0; c < 8; c++) {
+            cornerOriSum += this.ca[c] >> 3;
+        }
+        if (cornerOriSum % 3 !== 0) {
+            return false;
+        }
+        let edgeOriSum = 0;
+        for (let e = 0; e < 12; e++) {
+            edgeOriSum += this.ea[e] & 1;
+        }
+        if (edgeOriSum % 2 !== 0) {
+            return false;
+        }
+        const permParity = (perm: number[]): number => {
+            let inversions = 0;
+            for (let i = 0; i < perm.length; i++) {
+                for (let j = i + 1; j < perm.length; j++) {
+                    if (perm[i] > perm[j]) inversions++;
+                }
+            }
+            return inversions % 2;
+        };
+        return permParity(this.ca.map((v) => v & 7)) === permParity(this.ea.map((v) => v >> 1));
     }
 
     static moveCube: CubieCube[] = (() => {

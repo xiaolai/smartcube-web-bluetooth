@@ -39,9 +39,13 @@ function parseFacelet(faceMsg: number[]): string {
     return ret.join("");
 }
 
-/** Device timestamps in bytes 3–6 and history slots: big-endian uint32 */
+/**
+ * Device timestamps in bytes 3–6 and history slots: big-endian uint32. `>>> 0` keeps the
+ * value unsigned past half the clock range; a full 2^32-tick wrap (~31 days of uptime)
+ * is not unwound.
+ */
 function readQiYiTimestampBE(msg: number[], offset: number): number {
-    return (msg[offset]! << 24) | (msg[offset + 1]! << 16) | (msg[offset + 2]! << 8) | msg[offset + 3]!;
+    return ((msg[offset]! << 24) | (msg[offset + 1]! << 16) | (msg[offset + 2]! << 8) | msg[offset + 3]!) >>> 0;
 }
 
 /** Collect primary + all 11 history slots (bytes 36..90) */
@@ -94,6 +98,7 @@ class QiYiConnection implements SmartCubeConnection {
     private prevCubie = new CubieCube();
     private lastTs = 0;
     private writeChain: Promise<void> = Promise.resolve();
+    private closed = false;
 
     constructor(device: BluetoothDevice, mac: string) {
         this.device = device;
@@ -111,13 +116,26 @@ class QiYiConnection implements SmartCubeConnection {
 
 
     private sendMessage(content: number[]): Promise<void> {
-        if (!this.cubeChrct) return Promise.reject(new Error('[QiYi] Not connected'));
+        if (this.closed || !this.cubeChrct) return Promise.reject(new Error('[QiYi] Not connected'));
         const ch = this.cubeChrct;
         const run = async (): Promise<void> => {
+            // Re-checked inside the queue: a write enqueued before disconnect() must not
+            // execute against a torn-down connection.
+            if (this.closed) {
+                throw new Error('[QiYi] Not connected');
+            }
             await writeGattCharacteristicValue(ch, encryptQiYiMessage(content));
         };
         this.writeChain = this.writeChain.then(run, run);
         return this.writeChain;
+    }
+
+    /**
+     * Protocol ACKs are best-effort: a failed ACK is followed either by working traffic
+     * (the cube retransmits) or by a GATT disconnect that tears the connection down.
+     */
+    private sendAck(msg: number[]): void {
+        this.sendMessage(msg.slice(2, 7)).catch(() => {});
     }
 
     private sendHello(): Promise<void> {
@@ -188,120 +206,174 @@ class QiYiConnection implements SmartCubeConnection {
         if (msg[0] !== 0xfe) return;
 
         const opcode = msg[2]!;
-        const ts = readQiYiTimestampBE(msg, 3);
 
         if (opcode === OP_STATE_HELLO) {
-            // Hello response — always ACK
-            this.sendMessage(msg.slice(2, 7)).catch(() => {});
-            const newFacelet = parseFacelet(msg.slice(7, 34));
-            if (this.prevCubie.fromFacelet(newFacelet) === -1) {
-                return; // not a legal cube state (wrong key or corrupt frame): keep the previous state
-            }
-
-            this.bus.emit({
-                timestamp,
-                type: "FACELETS",
-                facelets: newFacelet
-            });
-
-            this.bus.emitBattery(msg[35]!, timestamp);
-            this.lastTs = ts;
-            return;
+            this.handleHello(msg, timestamp);
+        } else if (opcode === OP_STATE_CHANGE) {
+            this.handleStateChange(msg, timestamp);
+        } else if (opcode === OP_SYNC_CONFIRM) {
+            this.handleSyncConfirm(msg, timestamp);
         }
-
-        if (opcode === OP_STATE_CHANGE) {
-            const needsAck = msg.length > 91 && msg[91] !== 0;
-            if (needsAck) {
-                this.sendMessage(msg.slice(2, 7)).catch(() => {});
-            }
-
-            const candidates = collectQiYiStateChangeMoves(msg, ts);
-            const newMoves = candidates.filter(
-                ([code, moveTs]) => code >= 1 && code <= 12 && moveTs > this.lastTs,
-            );
-
-            for (let k = 0; k < newMoves.length; k++) {
-                const [code, moveTs] = newMoves[k]!;
-                const axis = [4, 1, 3, 0, 2, 5][(code - 1) >> 1]!;
-                const power = [0, 2][code & 1]!;
-                const m = axis * 3 + power;
-                const moveStr = ("URFDLB".charAt(axis) + " 2'".charAt(power)).trim();
-
-                CubieCube.CubeMult(this.prevCubie, CubieCube.moveCube[m], this.curCubie);
-                const facelet = this.curCubie.toFaceCube();
-
-                this.bus.emit({
-                    timestamp,
-                    type: "MOVE",
-                    face: axis,
-                    direction: power === 0 ? 0 : 1,
-                    move: moveStr,
-                    localTimestamp: k === newMoves.length - 1 ? timestamp : null,
-                    cubeTimestamp: Math.trunc(moveTs / QIYI_TICKS_PER_MS)
-                });
-
-                this.bus.emit({
-                    timestamp,
-                    type: "FACELETS",
-                    facelets: facelet
-                });
-
-                const tmp = this.curCubie;
-                this.curCubie = this.prevCubie;
-                this.prevCubie = tmp;
-            }
-
-            if (newMoves.length > 0) {
-                this.lastTs = newMoves[newMoves.length - 1]![1];
-            }
-
-            this.bus.emitBattery(msg[35]!, timestamp);
-            return;
-        }
-
-        if (opcode === OP_SYNC_CONFIRM) {
-            // Sync confirmation: emit solved state; no ACK for op 4 in reference protocol.
-            if (msg[1] !== 38) return;
-            this.bus.emit({
-                timestamp,
-                type: "FACELETS",
-                facelets: QIYI_SOLVED_FACELETS
-            });
-            this.prevCubie.fromFacelet(QIYI_SOLVED_FACELETS);
-            this.lastTs = ts;
-            return;
-        }
-
         // Unknown opcode: do not advance lastTs (avoids skewing move history filters).
     }
 
-    private onDisconnect = (): void => {
+    private handleHello(msg: number[], timestamp: number): void {
+        if (msg.length < 38) {
+            return; // facelets occupy bytes 7..33 and battery byte 35; shorter frames are corrupt
+        }
+        // Hello response — always ACK
+        this.sendAck(msg);
+        const newFacelet = parseFacelet(msg.slice(7, 34));
+        if (this.prevCubie.fromFacelet(newFacelet) === -1) {
+            return; // not a legal cube state (wrong key or corrupt frame): keep the previous state
+        }
+
+        this.bus.emit({
+            timestamp,
+            type: "FACELETS",
+            facelets: newFacelet
+        });
+
+        this.bus.emitBattery(msg[35]!, timestamp);
+        this.lastTs = readQiYiTimestampBE(msg, 3);
+    }
+
+    private handleStateChange(msg: number[], timestamp: number): void {
+        if (msg.length < 36) {
+            return; // primary move byte 34 and battery byte 35 are required
+        }
+        const ts = readQiYiTimestampBE(msg, 3);
+        const needsAck = msg.length > 91 && msg[91] !== 0;
+        if (needsAck) {
+            this.sendAck(msg);
+        }
+
+        const candidates = collectQiYiStateChangeMoves(msg, ts);
+        const newMoves = candidates.filter(
+            ([code, moveTs]) => code >= 1 && code <= 12 && moveTs > this.lastTs,
+        );
+
+        for (let k = 0; k < newMoves.length; k++) {
+            const [code, moveTs] = newMoves[k]!;
+            const axis = [4, 1, 3, 0, 2, 5][(code - 1) >> 1]!;
+            const power = [0, 2][code & 1]!;
+            const m = axis * 3 + power;
+            const moveStr = ("URFDLB".charAt(axis) + " 2'".charAt(power)).trim();
+
+            CubieCube.CubeMult(this.prevCubie, CubieCube.moveCube[m], this.curCubie);
+            const facelet = this.curCubie.toFaceCube();
+
+            this.bus.emit({
+                timestamp,
+                type: "MOVE",
+                face: axis,
+                direction: power === 0 ? 0 : 1,
+                move: moveStr,
+                localTimestamp: k === newMoves.length - 1 ? timestamp : null,
+                cubeTimestamp: Math.trunc(moveTs / QIYI_TICKS_PER_MS)
+            });
+
+            this.bus.emit({
+                timestamp,
+                type: "FACELETS",
+                facelets: facelet
+            });
+
+            const tmp = this.curCubie;
+            this.curCubie = this.prevCubie;
+            this.prevCubie = tmp;
+        }
+
+        if (newMoves.length > 0) {
+            this.lastTs = newMoves[newMoves.length - 1]![1];
+        }
+
+        // The packet carries the authoritative facelet snapshot in bytes 7..33. If the
+        // move-derived state drifted (lost history, dropped packets), adopt the cube's
+        // own state instead of staying desynchronized forever.
+        const packetFacelet = parseFacelet(msg.slice(7, 34));
+        if (packetFacelet !== this.prevCubie.toFaceCube()) {
+            const packetCubie = new CubieCube().fromFacelet(packetFacelet);
+            if (packetCubie !== -1) {
+                this.prevCubie = packetCubie;
+                this.curCubie = new CubieCube();
+                this.bus.emit({
+                    timestamp,
+                    type: "FACELETS",
+                    facelets: packetFacelet
+                });
+            }
+        }
+
+        this.bus.emitBattery(msg[35]!, timestamp);
+    }
+
+    private handleSyncConfirm(msg: number[], timestamp: number): void {
+        // Sync confirmation: emit solved state; no ACK for op 4 in reference protocol.
+        if (msg[1] !== 38) return;
+        this.bus.emit({
+            timestamp,
+            type: "FACELETS",
+            facelets: QIYI_SOLVED_FACELETS
+        });
+        this.prevCubie.fromFacelet(QIYI_SOLVED_FACELETS);
+        this.lastTs = readQiYiTimestampBE(msg, 3);
+    }
+
+    /** Idempotent teardown shared by remote and explicit disconnects. */
+    private teardown(): void {
+        this.closed = true;
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+        if (this.cubeChrct) {
+            this.cubeChrct.removeEventListener('characteristicvaluechanged', this.onCubeEvent);
+            this.cubeChrct = null;
+        }
         this.bus.resetBatteryDedupe();
         this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
         this.bus.complete();
+    }
+
+    private onDisconnect = (): void => {
+        this.teardown();
     };
 
     async init(): Promise<void> {
         this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
-        const gatt = await this.device.gatt!.connect();
-        const service = await gatt.getPrimaryService(SERVICE_UUID);
-        const chrcts = await service.getCharacteristics();
-        this.cubeChrct = findCharacteristic(chrcts, CHRCT_UUID_CUBE);
+        try {
+            const gatt = await this.device.gatt!.connect();
+            const service = await gatt.getPrimaryService(SERVICE_UUID);
+            const chrcts = await service.getCharacteristics();
+            this.cubeChrct = findCharacteristic(chrcts, CHRCT_UUID_CUBE);
 
-        if (!this.cubeChrct) {
-            throw new Error('[QiYi] Cannot find required characteristic');
+            if (!this.cubeChrct) {
+                throw new Error('[QiYi] Cannot find required characteristic');
+            }
+
+            this.cubeChrct.addEventListener('characteristicvaluechanged', this.onCubeEvent);
+            await this.cubeChrct.startNotifications();
+            await this.sendHello();
+        } catch (e) {
+            this.teardown();
+            if (this.device.gatt?.connected) {
+                this.device.gatt.disconnect();
+            }
+            throw e;
         }
-
-        this.cubeChrct.addEventListener('characteristicvaluechanged', this.onCubeEvent);
-        await this.cubeChrct.startNotifications();
-        await this.sendHello();
     }
 
     async sendCommand(command: SmartCubeCommand): Promise<void> {
         if (command.type === "REQUEST_FACELETS" || command.type === "REQUEST_BATTERY") {
             if (command.type === "REQUEST_BATTERY") {
                 this.bus.forceNextBattery();
+                try {
+                    await this.sendHello();
+                } catch (e) {
+                    // The request never reached the cube: disarm the forced emission so an
+                    // unrelated later packet is not treated as the response.
+                    this.bus.cancelForcedBattery();
+                    throw e;
+                }
+                return;
             }
             await this.sendHello();
         } else if (command.type === "REQUEST_HARDWARE") {
@@ -310,15 +382,14 @@ class QiYiConnection implements SmartCubeConnection {
     }
 
     async disconnect(): Promise<void> {
-        if (this.cubeChrct) {
-            this.cubeChrct.removeEventListener('characteristicvaluechanged', this.onCubeEvent);
-            await this.cubeChrct.stopNotifications().catch(() => {});
-            this.cubeChrct = null;
+        const cubeChrct = this.cubeChrct;
+        this.teardown();
+        // Let any in-flight queued write settle before stopping notifications so the two
+        // GATT operations cannot collide.
+        await this.writeChain.catch(() => {});
+        if (cubeChrct) {
+            await cubeChrct.stopNotifications().catch(() => {});
         }
-        this.bus.resetBatteryDedupe();
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }

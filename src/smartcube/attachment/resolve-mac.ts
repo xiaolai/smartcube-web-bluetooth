@@ -1,7 +1,8 @@
 import type { AttachmentContext } from './types';
 import type { MacAddressProvider } from '../types';
-import { getCachedMacForDevice, waitForManufacturerData } from './address-hints';
-import { throwIfAborted } from './abort';
+import { getCachedMacForDevice, removeCachedMacForDevice, waitForManufacturerData } from './address-hints';
+import { isAbortError, throwIfAborted } from './abort';
+import { parseMacBytes } from './mac-address';
 
 export type ResolveCubeMacOptions = {
     /** Parse a MAC from advertisement manufacturer data (context-supplied or freshly awaited). */
@@ -21,10 +22,26 @@ export type ResolveCubeMacOptions = {
     probeTimeoutMs?: number;
 };
 
+/** A malformed cached value would reach key derivation and fail every connect: drop it. */
+function validCachedMac(device: BluetoothDevice): string | null {
+    const cached = getCachedMacForDevice(device);
+    if (!cached) {
+        return null;
+    }
+    try {
+        parseMacBytes(cached);
+        return cached;
+    } catch {
+        removeCachedMacForDevice(device);
+        return null;
+    }
+}
+
 /**
  * The MAC-resolution ladder shared by drivers that must learn the cube's address:
- * advertisement context -> cached MAC -> provider -> fresh advertisements (merged frames) ->
- * name-derived candidates (optionally probed) -> provider fallback. Returns null when exhausted.
+ * advertisement context -> cached MAC (validated) -> provider -> fresh advertisements
+ * (merged frames) -> name-derived candidates (optionally probed) -> provider fallback.
+ * Returns null when exhausted.
  */
 export async function resolveCubeMac(
     device: BluetoothDevice,
@@ -32,10 +49,12 @@ export async function resolveCubeMac(
     context: AttachmentContext | undefined,
     options: ResolveCubeMacOptions
 ): Promise<string | null> {
+    throwIfAborted(context?.signal);
     let mac = options.parseFromManufacturerData(context?.advertisementManufacturerData ?? null);
-    mac = mac || getCachedMacForDevice(device);
+    mac = mac || validCachedMac(device);
     if (!mac && macProvider) {
         const r = await macProvider(device, false);
+        throwIfAborted(context?.signal);
         if (r) {
             mac = r;
         }
@@ -46,42 +65,50 @@ export async function resolveCubeMac(
         const mfData = await waitForManufacturerData(
             device,
             context?.enableAddressSearch ? options.advertisementTimeoutsMs[1] : options.advertisementTimeoutsMs[0],
-            { earlyExitOnEmptyFirstAdvertisement: false, signal: context?.signal }
+            {
+                earlyExitOnEmptyFirstAdvertisement: false,
+                signal: context?.signal,
+                // Keep merging until the data actually parses to a MAC: an unrelated
+                // manufacturer entry must not preempt a later MAC-bearing frame.
+                resolveWhen: (mf) => options.parseFromManufacturerData(mf) !== null,
+            }
         );
         mac = options.parseFromManufacturerData(mfData);
     }
 
-    if (!mac && options.useSingleCandidateWithoutProbe && options.candidatesFromName) {
-        const candidates = options.candidatesFromName(device.name);
-        if (candidates.length === 1) {
-            mac = candidates[0]!;
-        }
+    const nameCandidates = !mac && options.candidatesFromName ? options.candidatesFromName(device.name) : [];
+
+    if (!mac && options.useSingleCandidateWithoutProbe && nameCandidates.length === 1) {
+        mac = nameCandidates[0]!;
     }
 
-    if (!mac && context?.enableAddressSearch && options.candidatesFromName && options.probe) {
-        const candidates = options.candidatesFromName(device.name);
-        for (let i = 0; i < candidates.length; i++) {
-            if (context.signal?.aborted) {
-                break;
-            }
-            context.onStatus?.(`Testing address (${i + 1}/${candidates.length})…`);
+    if (!mac && context?.enableAddressSearch && nameCandidates.length > 0 && options.probe) {
+        for (let i = 0; i < nameCandidates.length; i++) {
+            // Throw (not break): an aborted resolution must not fall through to the
+            // provider fallback below and keep working after cancellation.
+            throwIfAborted(context.signal);
+            context.onStatus?.(`Testing address (${i + 1}/${nameCandidates.length})…`);
             try {
                 if (
-                    await options.probe(device, candidates[i]!, {
+                    await options.probe(device, nameCandidates[i]!, {
                         timeoutMs: options.probeTimeoutMs ?? 2000,
                         signal: context.signal,
                     })
                 ) {
-                    mac = candidates[i]!;
+                    mac = nameCandidates[i]!;
                     break;
                 }
-            } catch {
-                /* try next */
+            } catch (e) {
+                if (isAbortError(e)) {
+                    throw e;
+                }
+                // any other probe failure: this candidate did not validate, try the next
             }
         }
     }
 
     if (!mac && macProvider) {
+        throwIfAborted(context?.signal);
         const r = await macProvider(device, true);
         if (r) {
             mac = r;

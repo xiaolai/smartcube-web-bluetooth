@@ -6,13 +6,47 @@ const GATT_RETRY_MAX = 2;
 const GATT_RETRY_BASE_DELAY_MS = 150;
 
 function disconnectGattSafe(gatt: BluetoothRemoteGATTServer): Promise<void> {
-    return Promise.resolve(
-        (gatt as unknown as { disconnect(): Promise<void> }).disconnect()
-    ).catch(() => {});
+    try {
+        return Promise.resolve(
+            (gatt as unknown as { disconnect(): Promise<void> }).disconnect()
+        ).catch(() => {});
+    } catch {
+        // a synchronous throw from disconnect() must not mask the original failure
+        return Promise.resolve();
+    }
 }
 
-async function delay(ms: number): Promise<void> {
-    await new Promise((r) => setTimeout(r, ms));
+function abortableDelay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            reject(abortError());
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+/** Race any GATT operation against the abort signal, cleaning up the listener. */
+function raceWithAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    if (!signal) {
+        return work;
+    }
+    let onAbort: (() => void) | undefined;
+    return Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+            onAbort = () => reject(abortError());
+            signal.addEventListener('abort', onAbort, { once: true });
+        }),
+    ]).finally(() => {
+        if (onAbort) {
+            signal.removeEventListener('abort', onAbort);
+        }
+    });
 }
 
 async function connectGattWithTimeout(
@@ -22,33 +56,24 @@ async function connectGattWithTimeout(
 ): Promise<void> {
     const sym = Symbol('gattTimeout');
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let onAbort: (() => void) | undefined;
     try {
-        await Promise.race([
-            gatt.connect(),
-            new Promise<never>((_, rej) => {
-                timer = setTimeout(() => rej(sym), timeoutMs);
-            }),
-            new Promise<never>((_, rej) => {
-                if (!signal) {
-                    return;
-                }
-                onAbort = () => rej(abortError());
-                signal.addEventListener('abort', onAbort, { once: true });
-            }),
-        ]);
+        await raceWithAbort(
+            Promise.race([
+                gatt.connect(),
+                new Promise<never>((_, rej) => {
+                    timer = setTimeout(() => rej(sym), timeoutMs);
+                }),
+            ]),
+            signal,
+        );
     } catch (e) {
+        // Disconnection ownership lies with the caller's retry loop.
         if (e === sym) {
-            await disconnectGattSafe(gatt);
             throw new Error('GATT connection timeout');
         }
-        await disconnectGattSafe(gatt).catch(() => {});
         throw e;
     } finally {
         clearTimeout(timer);
-        if (signal && onAbort) {
-            signal.removeEventListener('abort', onAbort);
-        }
     }
 }
 
@@ -76,7 +101,9 @@ export async function collectPrimaryServiceUuids(
         throwIfAborted(signal);
         try {
             await connectGattWithTimeout(gatt, GATT_CONNECT_TIMEOUT_MS, signal);
-            const services = await gatt.getPrimaryServices();
+            // Service discovery can stall on some stacks: honour the abort here too,
+            // not just during connect.
+            const services = await raceWithAbort(gatt.getPrimaryServices(), signal);
             const set = new Set<string>();
             for (const s of services) {
                 set.add(normalizeUuid(s.uuid));
@@ -89,7 +116,7 @@ export async function collectPrimaryServiceUuids(
                 throw e;
             }
             if (attempt < GATT_RETRY_MAX) {
-                await delay(GATT_RETRY_BASE_DELAY_MS * (attempt + 1));
+                await abortableDelay(GATT_RETRY_BASE_DELAY_MS * (attempt + 1), signal);
             }
         }
     }

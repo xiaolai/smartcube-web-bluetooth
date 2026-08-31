@@ -94,6 +94,9 @@ class MoyuMhcConnection implements SmartCubeConnection {
         const fx = e.getFloat32(8, true);
         const fy = e.getFloat32(12, true);
         const fz = e.getFloat32(16, true);
+        if (![fw, fx, fy, fz].every(Number.isFinite) || Math.hypot(fw, fx, fy, fz) < 1e-6) {
+            return; // corrupt sample: normalizing it would fabricate an orientation
+        }
         const quaternion = normalizeQuaternion({
             w: fw,
             x: fx,
@@ -112,20 +115,20 @@ class MoyuMhcConnection implements SmartCubeConnection {
      * After each move, `prevCubie` holds the latest physical state (see parseTurn swap).
      * Seed that cube from the device facelet string and align turn counters with gyro angles.
      */
-    private applyCubeStateFromDevice(stickers: number[][], angles: number[]): void {
+    private applyCubeStateFromDevice(stickers: number[][], angles: number[]): boolean {
         const facelet = moyuStickersToFaceletString(stickers);
-        this.prevCubie = new CubieCube();
-        const parsed = this.prevCubie.fromFacelet(facelet);
+        const parsed = new CubieCube().fromFacelet(facelet);
         if (parsed === -1) {
-            this.prevCubie = new CubieCube();
-            this.curCubie = new CubieCube();
-            this.faceStatus = [0, 0, 0, 0, 0, 0];
-            return;
+            // Invalid device payload: keep the last known state authoritative instead of
+            // silently pretending the cube is solved.
+            return false;
         }
+        this.prevCubie = parsed;
         this.curCubie = new CubieCube();
         for (let i = 0; i < FACE_ORDER_LEN; i++) {
             this.faceStatus[i] = (angles[i] ?? 0) % 9;
         }
+        return true;
     }
 
     private parseTurn(data: DataView): void {
@@ -136,11 +139,13 @@ class MoyuMhcConnection implements SmartCubeConnection {
 
         for (let i = 0; i < nMoves; i++) {
             const offset = 1 + i * 6;
-            let ts = data.getUint8(offset + 1) << 24
+            // >>> 0 keeps the assembled 32-bit value unsigned past the halfway point of
+            // the cube clock's range.
+            const rawTs = (data.getUint8(offset + 1) << 24
                 | data.getUint8(offset + 0) << 16
                 | data.getUint8(offset + 3) << 8
-                | data.getUint8(offset + 2);
-            ts = Math.round(ts / 65536 * 1000);
+                | data.getUint8(offset + 2)) >>> 0;
+            const ts = Math.round(rawTs / 65536 * 1000);
 
             const face = data.getUint8(offset + 4);
             if (face >= FACE_ORDER_LEN) continue;
@@ -200,8 +205,24 @@ class MoyuMhcConnection implements SmartCubeConnection {
         }
     }
 
-    private onDisconnect = (): void => {
+    /** Idempotent teardown shared by remote and explicit disconnects. */
+    private teardown(): void {
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+        if (this.readChrct) {
+            this.readChrct.removeEventListener('characteristicvaluechanged', this.onReadEvent);
+            this.readChrct = null;
+        }
+        if (this.turnChrct) {
+            this.turnChrct.removeEventListener('characteristicvaluechanged', this.onTurnEvent);
+            this.turnChrct = null;
+        }
+        if (this.gyroChrct) {
+            this.gyroChrct.removeEventListener('characteristicvaluechanged', this.onGyroEvent);
+            this.gyroChrct = null;
+        }
+        this.writeChrct = null;
+        this.v1?.dispose();
+        this.v1 = null;
         this.bus.resetBatteryDedupe();
         if (this.batteryInterval) {
             clearInterval(this.batteryInterval);
@@ -209,6 +230,10 @@ class MoyuMhcConnection implements SmartCubeConnection {
         }
         this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
         this.bus.complete();
+    }
+
+    private onDisconnect = (): void => {
+        this.teardown();
     };
 
     private updateCapabilities(): void {
@@ -216,7 +241,8 @@ class MoyuMhcConnection implements SmartCubeConnection {
         this.bus.setCapabilities({
             gyroscope: this.gyroChrct !== null,
             battery: hasV1,
-            facelets: hasV1,
+            // Turn tracking also reports facelets, not just the v1 state read.
+            facelets: hasV1 || this.turnChrct !== null,
             hardware: hasV1,
             reset: hasV1,
         });
@@ -224,58 +250,108 @@ class MoyuMhcConnection implements SmartCubeConnection {
 
     async init(): Promise<void> {
         this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
-        const gatt = await this.device.gatt!.connect();
-        const service = await gatt.getPrimaryService(SERVICE_UUID);
-        const chrcts = await service.getCharacteristics();
+        try {
+            const gatt = await this.device.gatt!.connect();
+            const service = await gatt.getPrimaryService(SERVICE_UUID);
+            const chrcts = await service.getCharacteristics();
 
-        this.writeChrct = findCharacteristic(chrcts, CHRCT_UUID_WRITE);
-        this.readChrct = findCharacteristic(chrcts, CHRCT_UUID_READ);
-        this.turnChrct = findCharacteristic(chrcts, CHRCT_UUID_TURN);
-        this.gyroChrct = findCharacteristic(chrcts, CHRCT_UUID_GYRO);
+            this.writeChrct = findCharacteristic(chrcts, CHRCT_UUID_WRITE);
+            this.readChrct = findCharacteristic(chrcts, CHRCT_UUID_READ);
+            this.turnChrct = findCharacteristic(chrcts, CHRCT_UUID_TURN);
+            this.gyroChrct = findCharacteristic(chrcts, CHRCT_UUID_GYRO);
 
-        if (this.writeChrct) {
-            this.v1 = new MoyuV1Client(this.writeChrct);
-        }
-
-        if (this.readChrct) {
-            this.readChrct.addEventListener('characteristicvaluechanged', this.onReadEvent);
-            await this.readChrct.startNotifications();
-        }
-
-        if (this.turnChrct) {
-            this.turnChrct.addEventListener('characteristicvaluechanged', this.onTurnEvent);
-            await this.turnChrct.startNotifications();
-        }
-
-        if (this.gyroChrct) {
-            this.gyroChrct.addEventListener('characteristicvaluechanged', this.onGyroEvent);
-            await this.gyroChrct.startNotifications();
-        }
-
-        this.updateCapabilities();
-
-        if (this.v1) {
-            await this.pollBattery();
-            this.batteryInterval = setInterval(() => {
-                void this.pollBattery();
-            }, 60_000);
-            try {
-                const st = await this.v1.getCubeState();
-                this.applyCubeStateFromDevice(st.stickers, st.angles);
-                const facelets = this.prevCubie.toFaceCube();
-                this.bus.emit({
-                    timestamp: now(),
-                    type: 'FACELETS',
-                    facelets,
-                });
-            } catch {
-                this.bus.emit({
-                    timestamp: now(),
-                    type: 'FACELETS',
-                    facelets: SOLVED_FACELET,
-                });
+            // Every v1 command needs a response on the read characteristic; a
+            // write-only client would advertise capabilities it cannot serve.
+            if (this.writeChrct && this.readChrct) {
+                this.v1 = new MoyuV1Client(this.writeChrct);
             }
-        } else {
+            if (!this.v1 && !this.turnChrct) {
+                throw new Error('MoYu MHC: no usable protocol path (need turn notifications or the v1 read/write pair)');
+            }
+
+            if (this.readChrct) {
+                this.readChrct.addEventListener('characteristicvaluechanged', this.onReadEvent);
+                await this.readChrct.startNotifications();
+            }
+
+            // Synchronize the cube state BEFORE enabling turn notifications, so moves
+            // cannot be decoded against an unseeded tracker and then overwritten.
+            if (this.v1) {
+                try {
+                    const st = await this.v1.getCubeState();
+                    if (this.applyCubeStateFromDevice(st.stickers, st.angles)) {
+                        this.bus.emit({
+                            timestamp: now(),
+                            type: 'FACELETS',
+                            facelets: this.prevCubie.toFaceCube(),
+                        });
+                    }
+                } catch {
+                    // State unavailable: leave the snapshot's facelets unknown rather
+                    // than fabricating a solved state.
+                }
+            }
+
+            if (this.turnChrct) {
+                this.turnChrct.addEventListener('characteristicvaluechanged', this.onTurnEvent);
+                await this.turnChrct.startNotifications();
+            }
+
+            if (this.gyroChrct) {
+                this.gyroChrct.addEventListener('characteristicvaluechanged', this.onGyroEvent);
+                await this.gyroChrct.startNotifications();
+            }
+
+            this.updateCapabilities();
+
+            if (this.v1) {
+                await this.pollBattery();
+                this.batteryInterval = setInterval(() => {
+                    void this.pollBattery();
+                }, 60_000);
+            }
+        } catch (e) {
+            this.teardown();
+            if (this.device.gatt?.connected) {
+                this.device.gatt.disconnect();
+            }
+            throw e;
+        }
+    }
+
+    async sendCommand(command: SmartCubeCommand): Promise<void> {
+        if (!this.v1) return;
+
+        // Failures propagate to the caller: a timed-out or rejected command must not
+        // look like success. Timestamps are captured after the response arrives.
+        if (command.type === 'REQUEST_FACELETS') {
+            const st = await this.v1.getCubeState();
+            if (!this.applyCubeStateFromDevice(st.stickers, st.angles)) {
+                throw new Error('MoYu MHC: device returned an invalid cube state');
+            }
+            this.bus.emit({
+                timestamp: now(),
+                type: 'FACELETS',
+                facelets: this.prevCubie.toFaceCube(),
+            });
+        } else if (command.type === 'REQUEST_BATTERY') {
+            const b = await this.v1.getBatteryInfo();
+            this.bus.forceNextBattery();
+            this.bus.emitBattery(b.value.percentage, now());
+        } else if (command.type === 'REQUEST_HARDWARE') {
+            const h = await this.v1.getHardwareInfo();
+            this.bus.emit({
+                timestamp: now(),
+                type: 'HARDWARE',
+                hardwareName: this.deviceName,
+                softwareVersion: `${h.major}.${h.minor}.${h.patch}`,
+                gyroSupported: this.capabilities.gyroscope,
+            });
+        } else if (command.type === 'REQUEST_RESET') {
+            await this.v1.setCubeState(MOYU_V1_SOLVED_STICKERS, [0, 0, 0, 0, 0, 0]);
+            this.faceStatus = [0, 0, 0, 0, 0, 0];
+            this.curCubie = new CubieCube();
+            this.prevCubie = new CubieCube();
             this.bus.emit({
                 timestamp: now(),
                 type: 'FACELETS',
@@ -284,74 +360,14 @@ class MoyuMhcConnection implements SmartCubeConnection {
         }
     }
 
-    async sendCommand(command: SmartCubeCommand): Promise<void> {
-        if (!this.v1) return;
-
-        const ts = now();
-        try {
-            if (command.type === 'REQUEST_FACELETS') {
-                const st = await this.v1.getCubeState();
-                this.applyCubeStateFromDevice(st.stickers, st.angles);
-                this.bus.emit({
-                    timestamp: ts,
-                    type: 'FACELETS',
-                    facelets: this.prevCubie.toFaceCube(),
-                });
-            } else if (command.type === 'REQUEST_BATTERY') {
-                const b = await this.v1.getBatteryInfo();
-                this.bus.forceNextBattery();
-                this.bus.emitBattery(b.value.percentage, ts);
-            } else if (command.type === 'REQUEST_HARDWARE') {
-                const h = await this.v1.getHardwareInfo();
-                this.bus.emit({
-                    timestamp: ts,
-                    type: 'HARDWARE',
-                    softwareVersion: `${h.major}.${h.minor}.${h.patch}`,
-                    hardwareVersion: `boot:${h.bootCount}`,
-                    gyroSupported: this.capabilities.gyroscope,
-                });
-            } else if (command.type === 'REQUEST_RESET') {
-                await this.v1.setCubeState(MOYU_V1_SOLVED_STICKERS, [0, 0, 0, 0, 0, 0]);
-                this.faceStatus = [0, 0, 0, 0, 0, 0];
-                this.curCubie = new CubieCube();
-                this.prevCubie = new CubieCube();
-                this.bus.emit({
-                    timestamp: ts,
-                    type: 'FACELETS',
-                    facelets: SOLVED_FACELET,
-                });
-            }
-        } catch {
-            /* ignore failed optional commands */
-        }
-    }
-
     async disconnect(): Promise<void> {
-        if (this.readChrct) {
-            this.readChrct.removeEventListener('characteristicvaluechanged', this.onReadEvent);
-            await this.readChrct.stopNotifications().catch(() => {});
+        const notifying = [this.readChrct, this.turnChrct, this.gyroChrct];
+        this.teardown();
+        for (const chrct of notifying) {
+            if (chrct) {
+                await chrct.stopNotifications().catch(() => {});
+            }
         }
-        if (this.turnChrct) {
-            this.turnChrct.removeEventListener('characteristicvaluechanged', this.onTurnEvent);
-            await this.turnChrct.stopNotifications().catch(() => {});
-        }
-        if (this.gyroChrct) {
-            this.gyroChrct.removeEventListener('characteristicvaluechanged', this.onGyroEvent);
-            await this.gyroChrct.stopNotifications().catch(() => {});
-        }
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
-        }
-        this.readChrct = null;
-        this.turnChrct = null;
-        this.gyroChrct = null;
-        this.writeChrct = null;
-        this.v1 = null;
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
         if (this.device.gatt?.connected) {
             this.device.gatt.disconnect();
         }

@@ -4,7 +4,8 @@ import { SmartCubeEventBus } from '../event-bus';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { throwIfAborted } from '../attachment/abort';
-import { getCachedMacForDevice, macFromGanManufacturerData, waitForManufacturerData } from '../attachment/address-hints';
+import { macFromGanManufacturerData } from '../attachment/address-hints';
+import { resolveCubeMac } from '../attachment/resolve-mac';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import * as def from '../../gan-cube-definitions';
 import { GanGen1CubeConnection } from '../../gan-gen1';
@@ -134,10 +135,12 @@ class GanSmartCubeConnection implements SmartCubeConnection {
     private readonly forwardLegacyEvent = (event: GanCubeEvent): void => {
         if (
             event.type === 'HARDWARE' &&
-            this.protocol.id === 'gan-gen2' &&
+            (this.protocol.id === 'gan-gen2' || this.protocol.id === 'gan-gen3') &&
             typeof event.gyroSupported === 'boolean' &&
             this.capabilities.gyroscope !== event.gyroSupported
         ) {
+            // gen2/gen3 report gyro support in their hardware frames; gen4 keeps the
+            // lazy detection from actual GYRO packets.
             this.bus.setCapabilities({ gyroscope: event.gyroSupported });
         }
         if (event.type === 'BATTERY') {
@@ -150,6 +153,9 @@ class GanSmartCubeConnection implements SmartCubeConnection {
     /** Events the legacy connection emitted during init, before this wrapper could subscribe. */
     replayCapturedEvents(events: GanCubeEvent[]): void {
         for (const event of events) {
+            if (event.type === 'MOVE' || event.type === 'GYRO') {
+                continue; // no subscribers can exist yet and these carry no snapshot state
+            }
             this.forwardLegacyEvent(event);
         }
     }
@@ -194,8 +200,13 @@ async function connectGanDevice(
     if (!gatt.connected) {
         await gatt.connect();
     }
-    const services = await gatt.getPrimaryServices();
-    const serviceUuidSet = new Set(services.map((s) => normalizeUuid(s.uuid)));
+    // Reuse the service snapshot the attachment pipeline already collected; rediscovery
+    // is an extra BLE round trip and a second failure point. Normalized defensively:
+    // callers may supply UUIDs in any case/width.
+    const serviceUuidSet: ReadonlySet<string> =
+        context?.serviceUuids && context.serviceUuids.size > 0
+            ? new Set([...context.serviceUuids].map(normalizeUuid))
+            : new Set((await gatt.getPrimaryServices()).map((s) => normalizeUuid(s.uuid)));
 
     if (hasGanGen1Profile(serviceUuidSet)) {
         const { result: gen1Conn, captured } = await createWithCapturedInit((events$) =>
@@ -206,35 +217,18 @@ async function connectGanDevice(
         return wrapped;
     }
 
-    let mac: string | null = null;
-    if (context?.advertisementManufacturerData) {
-        mac = macFromGanManufacturerData(context.advertisementManufacturerData);
-    }
-    mac = mac || getCachedMacForDevice(device);
-    if (!mac && macProvider) {
-        const r = await macProvider(device, false);
-        if (r) {
-            mac = r;
-        }
-    }
-    if (!mac) {
-        const mf = await waitForManufacturerData(device, 5000);
-        if (mf) {
-            mac = macFromGanManufacturerData(mf);
-        }
-    }
-    if (!mac && macProvider) {
-        const r = await macProvider(device, true);
-        if (r) {
-            mac = r;
-        }
-    }
+    // The shared resolution ladder handles context data, the cache (with validation),
+    // providers, fresh advertisements, and cancellation - one implementation for every
+    // MAC-bearing driver.
+    const mac = await resolveCubeMac(device, macProvider, context, {
+        parseFromManufacturerData: (mf) => (mf ? macFromGanManufacturerData(mf) : null),
+        advertisementTimeoutsMs: [5000, 5000],
+    });
 
     throwIfAborted(context?.signal);
     if (!mac) {
         throw new Error('Unable to determine cube MAC address, connection is not possible!');
     }
-    bleDevice.mac = mac;
 
     const { result: created, captured } = await createWithCapturedInit((events$) =>
         createGanClassicConnection(bleDevice, gatt, serviceUuidSet, mac, { events$ })
@@ -243,18 +237,16 @@ async function connectGanDevice(
         throw new Error("Can't find target BLE services - wrong or unsupported cube device model");
     }
 
-    const wrapped = new GanSmartCubeConnection(
-        created.conn,
-        mac,
-        created.generation === 'gen2'
-            ? GAN_GEN2_PROTOCOL
-            : created.generation === 'gen3'
-              ? GAN_GEN3_PROTOCOL
-              : GAN_GEN4_PROTOCOL,
-    );
+    const wrapped = new GanSmartCubeConnection(created.conn, mac, GENERATION_PROTOCOLS[created.generation]);
     wrapped.replayCapturedEvents(captured);
     return wrapped;
 }
+
+const GENERATION_PROTOCOLS = {
+    gen2: GAN_GEN2_PROTOCOL,
+    gen3: GAN_GEN3_PROTOCOL,
+    gen4: GAN_GEN4_PROTOCOL,
+} as const;
 
 const GAN_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'GAN' }, { namePrefix: 'MG' }, { namePrefix: 'AiCube' }];
 
@@ -267,7 +259,7 @@ const ganProtocol: SmartCubeProtocol = {
         def.GAN_GEN3_SERVICE,
         def.GAN_GEN4_SERVICE,
     ],
-    optionalManufacturerData: def.GAN_CIC_LIST,
+    optionalManufacturerData: [...def.GAN_CIC_LIST],
     needsMac: true,
 
     matchesDevice: deviceNameMatchesFilters(GAN_NAME_FILTERS),
@@ -285,13 +277,7 @@ const ganProtocol: SmartCubeProtocol = {
         if (serviceUuids.has(g1Primary) && serviceUuids.has(deviceInfo) && ganProtocol.matchesDevice(device)) {
             return 125 + bonus;
         }
-        if (serviceUuids.has(g4)) {
-            return 120 + bonus;
-        }
-        if (serviceUuids.has(g3)) {
-            return 120 + bonus;
-        }
-        if (serviceUuids.has(g2)) {
+        if (serviceUuids.has(g2) || serviceUuids.has(g3) || serviceUuids.has(g4)) {
             return 120 + bonus;
         }
         return 0;

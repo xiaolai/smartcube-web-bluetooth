@@ -97,3 +97,30 @@ describe('cubeTimestampCalcSkew', () => {
     expect(skew).toBeCloseTo(2.0, 3);
   });
 });
+
+describe('cubeTimestampLinearFit gap interpolation', () => {
+  it('interpolates a bounded gap across the surrounding timestamps instead of clustering', () => {
+    const res = cubeTimestampLinearFit([
+      move({ localTimestamp: 1000, cubeTimestamp: 100 }),
+      move({ localTimestamp: 1100, cubeTimestamp: null }),
+      move({ localTimestamp: 1200, cubeTimestamp: null }),
+      move({ localTimestamp: 1300, cubeTimestamp: 400 }),
+    ]);
+    // Evenly spread: 100, 200, 300, 400 -> normalised to the first move.
+    expect(res.map((m) => m.cubeTimestamp)).toEqual([0, 100, 200, 300]);
+  });
+});
+
+describe('cubeTimestampCalcSkew non-estimable windows', () => {
+  it('returns NaN instead of a false 0% for a single timestamped move', () => {
+    expect(cubeTimestampCalcSkew([move({ localTimestamp: 1000, cubeTimestamp: 500 })])).toBeNaN();
+  });
+
+  it('returns NaN when every local timestamp is identical (no spread to fit)', () => {
+    const skew = cubeTimestampCalcSkew([
+      move({ localTimestamp: 1000, cubeTimestamp: 100 }),
+      move({ localTimestamp: 1000, cubeTimestamp: 200 }),
+    ]);
+    expect(skew).toBeNaN();
+  });
+});

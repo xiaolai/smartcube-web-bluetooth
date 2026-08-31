@@ -8,7 +8,6 @@ import { GanBitReader } from './gan-bit-reader';
 import type {
     GanCubeCommand,
     GanCubeEvent,
-    GanCubeMoveEvent,
     GanCubeRawConnection,
     GanCubeState,
     GanProtocolDriver,
@@ -21,7 +20,7 @@ const sum: (arr: Array<number>) => number = arr => arr.reduce((a, v) => a + v, 0
  * Decode 7 corners + 11 edges at the given bit offsets and reconstruct the 8th corner /
  * 12th edge from the permutation-sum and orientation-parity invariants.
  */
-function decodeCornersEdges(msg: GanBitReader, offsets: { cp: number; co: number; ep: number; eo: number }): GanCubeState {
+export function decodeCornersEdges(msg: GanBitReader, offsets: { cp: number; co: number; ep: number; eo: number }): GanCubeState {
     const cp: Array<number> = [];
     const co: Array<number> = [];
     const ep: Array<number> = [];
@@ -71,6 +70,8 @@ function decodeGyroEvent(msg: GanBitReader, timestamp: number, quaternionOffset:
  * Shared gen3/gen4 move bookkeeping: FIFO of pending moves, gap detection via circular
  * serials, history requests, and reverse-order injection of recovered moves.
  */
+type BufferedMoveEvent = Extract<GanCubeEvent, { type: "MOVE" }>;
+
 class GanMoveHistoryBuffer {
 
     /** Serial of the most recent state report received from the cube */
@@ -78,11 +79,11 @@ class GanMoveHistoryBuffer {
     /** Serial of the last move evicted to subscribers */
     lastSerial: number = -1;
     lastLocalTimestamp: number | null = null;
-    private moveBuffer: GanCubeEvent[] = [];
+    private moveBuffer: BufferedMoveEvent[] = [];
 
     constructor(private readonly buildHistoryRequest: (serial: number, count: number) => Uint8Array) {}
 
-    push(move: GanCubeEvent): void {
+    push(move: BufferedMoveEvent): void {
         this.moveBuffer.push(move);
     }
 
@@ -98,7 +99,9 @@ class GanMoveHistoryBuffer {
         // Because due to firmware bugs (e.g. iCarry2) the moves beyond the edge will be spoofed with 'D' (just zero bytes).
         count = Math.min(count, serial + 1);
         return conn.sendCommandMessage(this.buildHistoryRequest(serial, count)).catch(() => {
-            // We can safely suppress and ignore possible GATT write errors, requestMoveHistory command is automatically retried on next move event
+            // Safe to suppress GATT write errors: the request is retried on the next move
+            // event (gap still present) and by every periodic facelets event via
+            // checkIfMoveMissed, so a failed request cannot lose moves permanently.
         });
     }
 
@@ -109,9 +112,13 @@ class GanMoveHistoryBuffer {
     async evictMoveBuffer(conn?: GanCubeRawConnection): Promise<Array<GanCubeEvent>> {
         const evictedEvents: GanCubeEvent[] = [];
         while (this.moveBuffer.length > 0) {
-            const bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+            const bufferHead = this.moveBuffer[0]!;
             const diff = this.lastSerial === -1 ? 1 : (bufferHead.serial - this.lastSerial) & 0xFF;
-            if (diff > 1) {
+            if (diff === 0) {
+                // Duplicate of an already-evicted serial (retransmitted live MOVE):
+                // discard instead of emitting a phantom physical move.
+                this.moveBuffer.shift();
+            } else if (diff > 1) {
                 if (conn) {
                     await this.requestMoveHistory(conn, bufferHead.serial, diff);
                 }
@@ -139,10 +146,10 @@ class GanMoveHistoryBuffer {
     }
 
     /** Used to inject missed moves to FIFO buffer */
-    injectMissedMoveToBuffer(move: GanCubeEvent) {
+    injectMissedMoveToBuffer(move: BufferedMoveEvent) {
         if (move.type === "MOVE") {
             if (this.moveBuffer.length > 0) {
-                const bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+                const bufferHead = this.moveBuffer[0]!;
                 // Skip if move event with the same serial already in the buffer
                 if (this.moveBuffer.some(e => e.type === "MOVE" && e.serial === move.serial))
                     return;
@@ -167,8 +174,11 @@ class GanMoveHistoryBuffer {
     async checkIfMoveMissed(conn: GanCubeRawConnection) {
         const diff = (this.serial - this.lastSerial) & 0xFF;
         if (diff > 0) {
-            if (this.serial !== 0) { // Constraint to avoid firmware bug (e.g. iCarry2) with facelets state event at 255 move counter
-                const bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+            // serial 0 is skipped to avoid an iCarry2 firmware bug (history across the
+            // 255->0 edge is spoofed with zero bytes); the next facelets event, with a
+            // nonzero serial, retries the recovery.
+            if (this.serial !== 0) {
+                const bufferHead = this.moveBuffer[0];
                 const startSerial = bufferHead ? bufferHead.serial : (this.serial + 1) & 0xFF;
                 await this.requestMoveHistory(conn, startSerial, diff + 1);
             }
@@ -240,7 +250,10 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                         const move = "URFDLB".charAt(face) + " '".charAt(direction);
                         let elapsed = msg.getBitWord(47 + 16 * i, 16);
                         if (elapsed === 0) { // In case of 16-bit cube timestamp register overflow
-                            elapsed = timestamp - this.lastMoveTimestamp;
+                            // Only substitute the host-clock gap once a baseline exists;
+                            // lastMoveTimestamp starts at 0 and epoch-sized gaps would
+                            // wildly inflate cubeTimestamp.
+                            elapsed = this.lastMoveTimestamp > 0 ? timestamp - this.lastMoveTimestamp : 0;
                         }
                         this.cubeTimestamp += elapsed;
                         cubeEvents.push({
@@ -369,7 +382,8 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
                     this.history.lastLocalTimestamp = timestamp;
                     const cubeTimestamp = msg.getBitWord(24, 32, true);
-                    const serial = this.history.serial = msg.getBitWord(56, 16, true);
+                    // Mask to the 8-bit domain the history/recovery math operates in.
+                    const serial = this.history.serial = msg.getBitWord(56, 16, true) & 0xFF;
 
                     const direction = msg.getBitWord(72, 2);
                     const face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(74, 6));
@@ -423,12 +437,14 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
             } else if (eventType === 0x02) { // FACELETS
 
-                const serial = this.history.serial = msg.getBitWord(24, 16, true);
+                const serial = this.history.serial = msg.getBitWord(24, 16, true) & 0xFF;
 
                 // Also check and recovery missed moves using periodic facelets event sent by cube
                 if (this.history.lastSerial !== -1) {
                     // Debounce the facelet event if there are active cube moves
-                    if (this.history.lastLocalTimestamp != null && (timestamp - this.history.lastLocalTimestamp) > 500) {
+                    // A null timestamp means no live move arrived at all - the stream is idle
+                    // and recovery must be allowed, not skipped forever.
+                    if (this.history.lastLocalTimestamp == null || (timestamp - this.history.lastLocalTimestamp) > 500) {
                         await this.history.checkIfMoveMissed(conn);
                     }
                 }
@@ -518,7 +534,8 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                 msg.set([0xDD, 0x04, 0x00, 0xED, 0x00, 0x00]);
                 break;
             case 'REQUEST_HARDWARE':
-                this.hwInfo = {};
+                // Re-arm emission but keep the assembled fields: encoding a command that
+                // is never sent (or whose write fails) must not destroy valid state.
                 this.hardwareInfoEmitted = false;
                 msg.set([0xDF, 0x03, 0x00, 0x00, 0x00]);
                 break;
@@ -566,7 +583,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                 let off = 0;
                 while (off + 72 <= msgBitLen && msg.getBitWord(off, 8) === 0x01) {
                     const cubeTimestamp = msg.getBitWord(off + 16, 32, true);
-                    const serial = msg.getBitWord(off + 48, 16, true);
+                    const serial = msg.getBitWord(off + 48, 16, true) & 0xFF;
                     this.history.serial = serial;
 
                     const direction = msg.getBitWord(off + 64, 2);
@@ -625,12 +642,14 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
         } else if (eventType === 0xED) { // FACELETS
 
-            const serial = this.history.serial = msg.getBitWord(16, 16, true);
+            const serial = this.history.serial = msg.getBitWord(16, 16, true) & 0xFF;
 
             // Also check and recovery missed moves using periodic facelets event sent by cube
             if (this.history.lastSerial !== -1) {
                 // Debounce the facelet event if there are active cube moves
-                if (this.history.lastLocalTimestamp != null && (timestamp - this.history.lastLocalTimestamp) > 500) {
+                // A null timestamp means no live move arrived at all - the stream is idle
+                // and recovery must be allowed, not skipped forever.
+                if (this.history.lastLocalTimestamp == null || (timestamp - this.history.lastLocalTimestamp) > 500) {
                     await this.history.checkIfMoveMissed(conn);
                 }
             }
@@ -675,7 +694,9 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                     break;
             }
 
-            if (Object.keys(this.hwInfo).length === 4) { // All fields are populated
+            if (!this.hardwareInfoEmitted && Object.keys(this.hwInfo).length === 4) {
+                // All fields populated and not yet reported for this request:
+                // retransmitted hardware frames must not emit duplicate events.
                 this.hardwareInfoEmitted = true;
                 cubeEvents.push(this.buildHardwareEvent(timestamp));
             }

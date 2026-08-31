@@ -10,14 +10,20 @@
         console.error('[fixture-recorder] Web Bluetooth is not available in this context');
         return;
     }
+    if (window.__fixtureRecorder) {
+        // Re-running would capture the patched methods as "originals" and make
+        // restore() leave stale wrappers installed.
+        console.warn('[fixture-recorder] already installed; call __fixtureRecorder.restore() first');
+        return;
+    }
     const t0 = performance.now();
     const traffic = [];
     const now = () => Math.round(performance.now() - t0);
     const toHex = (source) => {
-        let view;
-        if (source instanceof DataView) view = new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-        else if (source instanceof ArrayBuffer) view = new Uint8Array(source);
-        else view = new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+        const view =
+            source instanceof ArrayBuffer
+                ? new Uint8Array(source)
+                : new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
         return Array.from(view).map((b) => b.toString(16).toUpperCase().padStart(2, '0')).join('');
     };
 
@@ -36,29 +42,54 @@
     };
 
     const entry = (op, characteristic, extra) => {
-        traffic.push({ t: now(), op, service: characteristic.service.uuid, characteristic: characteristic.uuid, ...extra });
+        const record = { t: now(), op, service: characteristic.service.uuid, characteristic: characteristic.uuid, ...extra };
+        traffic.push(record);
+        return record;
     };
 
-    chr.writeValueWithResponse = function (value) {
-        entry('write', this, { data: toHex(value) });
-        return original.writeWith.call(this, value);
+    // A write is only replay-worthy if the native operation succeeded: mark failures so
+    // they can be filtered out instead of becoming phantom replay traffic.
+    const installWriteWrapper = (methodName, nativeMethod) => {
+        chr[methodName] = async function (value) {
+            const record = entry('write', this, { data: toHex(value) });
+            try {
+                return await nativeMethod.call(this, value);
+            } catch (e) {
+                record.op = 'write-failed';
+                throw e;
+            }
+        };
     };
-    chr.writeValueWithoutResponse = function (value) {
-        entry('write', this, { data: toHex(value) });
-        return original.writeWithout.call(this, value);
-    };
+    installWriteWrapper('writeValueWithResponse', original.writeWith);
+    installWriteWrapper('writeValueWithoutResponse', original.writeWithout);
+
     chr.readValue = async function () {
         const value = await original.read.call(this);
         entry('read', this, { data: toHex(value) });
         return value;
     };
+    // One recorder listener per characteristic, attached BEFORE notifications start so
+    // the first notification cannot slip past, and tracked so restore() can remove it.
+    const notifyListeners = new Map();
     chr.startNotifications = async function () {
-        const result = await original.start.call(this);
-        this.addEventListener('characteristicvaluechanged', (evt) => {
-            const value = evt.target.value;
-            if (value) entry('notify', evt.target, { data: toHex(value) });
-        });
-        return result;
+        if (!notifyListeners.has(this)) {
+            const listener = (evt) => {
+                const value = evt.target.value;
+                if (value) entry('notify', evt.target, { data: toHex(value) });
+            };
+            this.addEventListener('characteristicvaluechanged', listener);
+            notifyListeners.set(this, listener);
+        }
+        try {
+            return await original.start.call(this);
+        } catch (e) {
+            const listener = notifyListeners.get(this);
+            if (listener) {
+                this.removeEventListener('characteristicvaluechanged', listener);
+                notifyListeners.delete(this);
+            }
+            throw e;
+        }
     };
     srv.getPrimaryService = async function (uuid) {
         const service = await original.getService.call(this, uuid);
@@ -96,17 +127,25 @@
                 device: { name: device.name || '', id: '', mac: device.mac },
                 protocol,
                 services: [],
-                traffic,
+                // failed writes never reached the cube: they are not replayable traffic
+                traffic: traffic.filter((e) => e.op !== 'write-failed'),
                 events,
             };
             const blob = new Blob([JSON.stringify(fixture)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
+            a.href = url;
             a.download = filename;
+            document.body.appendChild(a);
             a.click();
-            URL.revokeObjectURL(a.href);
+            // Revoke after the download has been queued; an immediate revoke can hand
+            // the browser an already-dead URL.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                a.remove();
+            }, 1000);
         },
-        /** Undo the prototype patches (existing notification listeners remain). */
+        /** Undo the prototype patches and detach every recorder notification listener. */
         restore() {
             chr.writeValueWithResponse = original.writeWith;
             chr.writeValueWithoutResponse = original.writeWithout;
@@ -116,6 +155,11 @@
             srv.getPrimaryServices = original.getServices;
             svc.getCharacteristic = original.getCharacteristic;
             svc.getCharacteristics = original.getCharacteristics;
+            for (const [characteristic, listener] of notifyListeners) {
+                characteristic.removeEventListener('characteristicvaluechanged', listener);
+            }
+            notifyListeners.clear();
+            delete window.__fixtureRecorder;
         },
     };
     console.log('[fixture-recorder] recording; use __fixtureRecorder.download(...) when done');

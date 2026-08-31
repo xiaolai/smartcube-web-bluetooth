@@ -136,3 +136,23 @@ describe('cached MAC per device', () => {
     expect(getCachedMacForDevice(device)).toBeNull();
   });
 });
+
+describe('macFromGanManufacturerData subview handling', () => {
+  it('extracts the MAC from a DataView that is a subview of a larger buffer', () => {
+    // Raw CIC-prefixed payload [cic0, cic1, 0, 0, 0, mac…] embedded at offset 5 of a
+    // larger buffer; buffer.slice(2, 11) (the old behavior) would read the garbage prefix.
+    const payload = [0x01, 0x01, 0, 0, 0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+    const backing = new Uint8Array(5 + payload.length + 3).fill(0xee);
+    backing.set(payload, 5);
+    const sub = new DataView(backing.buffer, 5, payload.length);
+    expect(macFromGanManufacturerData(sub)).toBe('66:55:44:33:22:11');
+  });
+
+  it('extracts the MAC when a manufacturer-data map value is a subview', () => {
+    const value = [0, 0, 0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+    const backing = new Uint8Array(7 + value.length).fill(0xee);
+    backing.set(value, 7);
+    const mf = new Map([[0x0101, new DataView(backing.buffer, 7, value.length)]]);
+    expect(macFromGanManufacturerData(mf as unknown as BluetoothManufacturerData)).toBe('66:55:44:33:22:11');
+  });
+});

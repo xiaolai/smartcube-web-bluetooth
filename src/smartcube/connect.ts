@@ -24,7 +24,23 @@ function isMacCacheProofEvent(e: SmartCubeEvent): boolean {
     return new CubieCube().fromFacelet(e.facelets) !== -1;
 }
 
+/**
+ * Proof predicate matched to what the cube can actually produce: a legal FACELETS state
+ * when the driver supports facelets, otherwise any decoded HARDWARE/BATTERY response —
+ * weaker, but a facelets-less cube can never satisfy the strict check, and its driver
+ * already validates decodes.
+ */
+function macProofPredicate(conn: SmartCubeConnection): (e: SmartCubeEvent) => boolean {
+    if (conn.capabilities.facelets) {
+        return isMacCacheProofEvent;
+    }
+    return (e) => e.type === 'HARDWARE' || e.type === 'BATTERY';
+}
+
 const MAC_VERIFY_TIMEOUT_MS = 10_000;
+/** Pre-connect advertisement budget; longer when the slow MAC candidate search is enabled. */
+const ADVERTISEMENT_WAIT_MS = 2500;
+const ADVERTISEMENT_SEARCH_WAIT_MS = 8000;
 
 /**
  * After we subscribe for MAC proof, ask the cube for a fresh report. Init often emits
@@ -32,7 +48,7 @@ const MAC_VERIFY_TIMEOUT_MS = 10_000;
  * we can time out even with a correct MAC. Fire-and-forget so a stuck write cannot
  * block verification or leave the UI on "Verifying…" indefinitely.
  */
-function requestFreshStateForMacVerify(conn: SmartCubeConnection): void {
+function requestFreshStateForMacVerify(conn: SmartCubeConnection, onError: (e: unknown) => void): void {
     const c = conn.capabilities;
     const p: Promise<void> = c.facelets
         ? conn.sendCommand({ type: 'REQUEST_FACELETS' })
@@ -41,7 +57,7 @@ function requestFreshStateForMacVerify(conn: SmartCubeConnection): void {
           : c.battery
             ? conn.sendCommand({ type: 'REQUEST_BATTERY' })
             : Promise.resolve();
-    p.catch(() => {});
+    p.catch(onError);
 }
 
 /**
@@ -51,7 +67,8 @@ function requestFreshStateForMacVerify(conn: SmartCubeConnection): void {
 function waitForVerifiedCubeEvent(
     conn: SmartCubeConnection,
     timeoutMs: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    proof: (e: SmartCubeEvent) => boolean = isMacCacheProofEvent
 ): Promise<void> {
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -103,12 +120,17 @@ function waitForVerifiedCubeEvent(
             );
         }, timeoutMs);
 
-        sub = conn.events$.pipe(filter(isMacCacheProofEvent), take(1)).subscribe({
+        sub = conn.events$.pipe(filter(proof), take(1)).subscribe({
             next: () => {
                 finish(() => resolve());
             },
             error: (err: unknown) => {
                 finish(() => reject(err));
+            },
+            complete: () => {
+                // The connection closed before any proof arrived: fail immediately
+                // instead of sitting out the whole timeout.
+                finish(() => reject(new Error('Connection closed before cube data could be verified')));
             },
         });
     });
@@ -143,21 +165,38 @@ function deviceMayNeedMac(protocols: SmartCubeProtocol[], device: BluetoothDevic
     return matching.some((p) => p.needsMac === true);
 }
 
+function disconnectGattQuietly(device: BluetoothDevice): void {
+    try {
+        device.gatt?.disconnect();
+    } catch {
+        /* ignore */
+    }
+}
+
 export async function connectSmartCube(
     arg?: MacAddressProvider | ConnectSmartCubeOptions
 ): Promise<SmartCubeConnection> {
     const opts = normalizeOptions(arg);
     const protocols = getRegisteredProtocols();
+    // A throwing user status callback must never leave a connection dangling.
+    const status = (message: string): void => {
+        try {
+            opts.onStatus?.(message);
+        } catch {
+            /* user callback errors are not connect failures */
+        }
+    };
 
     if (protocols.length === 0) {
         throw new Error('No smartcube protocols registered');
     }
 
+    throwIfAborted(opts.signal);
     const mode: DeviceSelectionMode = opts.deviceSelection ?? 'filtered';
     const requestOptions = buildRequestDeviceOptions(protocols, mode, {
         deviceName: opts.deviceName,
     });
-    opts.onStatus?.('Select your cube…');
+    status('Select your cube…');
 
     const device = await navigator.bluetooth.requestDevice(requestOptions);
 
@@ -167,16 +206,16 @@ export async function connectSmartCube(
 
         let advertisementManufacturerData: BluetoothManufacturerData | null = null;
         if (deviceMayNeedMac(protocols, device)) {
-            opts.onStatus?.('Reading advertisements…');
+            status('Reading advertisements…');
             advertisementManufacturerData = await waitForManufacturerData(
                 device,
-                opts.enableAddressSearch ? 8000 : 2500,
+                opts.enableAddressSearch ? ADVERTISEMENT_SEARCH_WAIT_MS : ADVERTISEMENT_WAIT_MS,
                 { signal: opts.signal }
             );
             throwIfAborted(opts.signal);
         }
 
-        opts.onStatus?.('Connecting…');
+        status('Connecting…');
         const serviceUuids = await collectPrimaryServiceUuids(device, { signal: opts.signal });
 
         const protocol = resolveProtocolByGatt(protocols, serviceUuids, device);
@@ -195,33 +234,45 @@ export async function connectSmartCube(
 
         conn = await protocol.connect(device, opts.macAddressProvider, context);
     } catch (e) {
-        try {
-            device.gatt?.disconnect();
-        } catch {
-            /* ignore */
-        }
+        disconnectGattQuietly(device);
         throw e;
     }
+    if (opts.signal?.aborted) {
+        // The abort raced connection completion: tear the connection down properly.
+        await conn.disconnect().catch(() => disconnectGattQuietly(device));
+        throw abortError();
+    }
     if (conn.deviceMAC) {
-        opts.onStatus?.('Verifying connection…');
+        status('Verifying connection…');
         try {
+            let commandError: unknown = null;
             const verifyPromise = waitForVerifiedCubeEvent(
                 conn,
                 MAC_VERIFY_TIMEOUT_MS,
-                opts.signal
+                opts.signal,
+                macProofPredicate(conn)
             );
-            requestFreshStateForMacVerify(conn);
-            await verifyPromise;
+            requestFreshStateForMacVerify(conn, (e) => {
+                commandError = e;
+            });
+            try {
+                await verifyPromise;
+            } catch (e) {
+                if (e instanceof TimeoutError && commandError) {
+                    // The refresh command failed outright; surface that instead of a
+                    // misleading "no data" timeout.
+                    throw commandError;
+                }
+                throw e;
+            }
         } catch (e) {
             const aborted = isAbortError(e);
             if (!aborted) {
                 removeCachedMacForDevice(device);
             }
-            try {
-                device.gatt?.disconnect();
-            } catch {
-                /* ignore */
-            }
+            // Tear down through the connection so notifications, listeners, and timers
+            // are cleaned up; fall back to raw GATT only if that fails.
+            await conn.disconnect().catch(() => disconnectGattQuietly(device));
             if (aborted) {
                 throw e;
             }

@@ -1,20 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import { connectSmartCube } from './connect';
-import { registerProtocol, getRegisteredProtocols, type SmartCubeProtocol } from './protocol';
+import { registerProtocol, getRegisteredProtocols, unregisterProtocol, type SmartCubeProtocol } from './protocol';
 import type { SmartCubeConnection, SmartCubeEvent, SmartCubeSnapshot } from './types';
 
 function swapRegistry(): SmartCubeProtocol[] {
-  const reg = getRegisteredProtocols();
-  const snapshot = [...reg];
-  reg.length = 0;
+  const snapshot = getRegisteredProtocols();
+  for (const p of snapshot) {
+    unregisterProtocol(p);
+  }
   return snapshot;
 }
 
 function restoreRegistry(prev: SmartCubeProtocol[]): void {
-  const reg = getRegisteredProtocols();
-  reg.length = 0;
-  reg.push(...prev);
+  // Remove anything a test registered, then reinstate the previous set.
+  for (const p of getRegisteredProtocols()) {
+    unregisterProtocol(p);
+  }
+  for (const p of prev) {
+    registerProtocol(p);
+  }
 }
 
 function dummyConnection(): SmartCubeConnection {

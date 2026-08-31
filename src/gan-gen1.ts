@@ -2,11 +2,28 @@ import aesjs from 'aes-js';
 import type { AES } from 'aes-js';
 import { Subject } from 'rxjs';
 import * as def from './gan-cube-definitions';
-import type { GanCubeCommand, GanCubeConnection, GanCubeEvent } from './gan-cube-protocol';
+import type { GanCubeCommand, GanCubeConnection, GanCubeEvent, GanCubeState } from './gan-cube-protocol';
 import { now } from './utils';
-import { moveDirectionFromNotation } from './smartcube/cubie-cube';
+import { CubieCube, moveDirectionFromNotation } from './smartcube/cubie-cube';
 
 type AesBlockCipher = AES & { decrypt(block: number[]): number[] };
+
+/** Firmware acceptance: major byte 0x01 (bits 9-23 must equal 0x010000), minimum 0x010007. */
+const GEN1_FW_MASK = 0xFFFE00;
+const GEN1_FW_EXPECTED = 0x010000;
+const GEN1_FW_MIN = 0x010007;
+/** The FFF5 physical-state frame is exactly 19 bytes (gyro, move counter, move codes). */
+const GEN1_STATE_FRAME_LENGTH = 19;
+/** The FFF6 timing frame carries nine 16-bit values read through byte index 18. */
+const GEN1_TIMING_FRAME_LENGTH = 19;
+/** The FFF2 facelet frame carries six 3-byte faces. */
+const GEN1_FACELETS_FRAME_LENGTH = 18;
+const GEN1_POLL_INTERVAL_MS = 30;
+const GEN1_BATTERY_INTERVAL_MS = 60_000;
+/** Give up and disconnect after this many consecutive poll failures (~bounded minutes). */
+const GEN1_MAX_POLL_FAILURES = 50;
+/** Reconcile facelets from the cube after this many observed moves. */
+const GEN1_MOVES_PER_STATE_REFRESH = 20;
 
 class GanGen1Aes {
     private readonly aes: AesBlockCipher;
@@ -30,10 +47,10 @@ class GanGen1Aes {
     }
 }
 
-/** Key table index is the firmware "major" byte; unknown majors fall back to table 0. */
+/** Key table index is the firmware "major" byte; unknown majors are rejected (a wrong key would silently decrypt garbage). */
 export function deriveGen1Key(fwVersion: number, hw: DataView): Uint8Array | null {
     const idx = (fwVersion >> 8) & 255;
-    const table = def.GAN_GEN1_KEYS[idx] ?? def.GAN_GEN1_KEYS[0];
+    const table = def.GAN_GEN1_KEYS[idx];
     if (!table || hw.byteLength < 6) return null;
     const arr = Array.from(table);
     for (let s = 0; s < 6; s++) {
@@ -42,7 +59,11 @@ export function deriveGen1Key(fwVersion: number, hw: DataView): Uint8Array | nul
     return new Uint8Array(arr.slice(0, 16));
 }
 
-/** Three signed 14-bit-scaled components; w is reconstructed from the unit-quaternion invariant. */
+/**
+ * Three signed 14-bit-scaled components; w is reconstructed from the unit-quaternion
+ * invariant. Axis mapping (x,y,z) = (-raw1, raw2, -raw0) matches the field-tested
+ * cubing.js gen1 driver.
+ */
 function gyroFromState(state: Uint8Array): { x: number; y: number; z: number; w: number } | null {
     if (state.length < 6) return null;
     let raw0 = state[0]! | (state[1]! << 8);
@@ -55,7 +76,7 @@ function gyroFromState(state: Uint8Array): { x: number; y: number; z: number; w:
     const n1 = raw1 / 16384;
     const n2 = raw2 / 16384;
     const wSquared = 1 - n0 * n0 - n1 * n1 - n2 * n2;
-    return { x: n0, y: n2, z: -n1, w: wSquared > 0 ? Math.sqrt(wSquared) : 0 };
+    return { x: -n1, y: n2, z: -n0, w: wSquared > 0 ? Math.sqrt(wSquared) : 0 };
 }
 
 /** Six faces of eight 3-bit stickers each (bytes pair-swapped on the wire); centers are implied. */
@@ -71,13 +92,19 @@ function parseGen1Facelets(bytes: Uint8Array): string {
     return out.join('');
 }
 
-/** Placeholder cubelets state when gen1 only supplies a facelet string. */
-const GEN1_SOLVED_STATE = {
-    CP: [0, 1, 2, 3, 4, 5, 6, 7],
-    CO: [0, 0, 0, 0, 0, 0, 0, 0],
-    EP: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    EO: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-};
+/** Derive the cubie-level state from a parsed facelet string; null when not a legal state. */
+function cubieStateFromFacelets(facelets: string): GanCubeState | null {
+    const cubie = new CubieCube().fromFacelet(facelets);
+    if (cubie === -1) {
+        return null;
+    }
+    return {
+        CP: cubie.ca.map((v) => v & 7),
+        CO: cubie.ca.map((v) => v >> 3),
+        EP: cubie.ea.map((v) => v >> 1),
+        EO: cubie.ea.map((v) => v & 1),
+    };
+}
 
 /**
  * GAN 356i “API v1”: primary service `fff0` + Device Information for key derivation.
@@ -93,16 +120,19 @@ export class GanGen1CubeConnection implements GanCubeConnection {
     private readonly chrMoves: BluetoothRemoteGATTCharacteristic;
     private readonly chrFacelets: BluetoothRemoteGATTCharacteristic;
     private readonly chrBattery: BluetoothRemoteGATTCharacteristic;
-    private readonly chrGyroNotify: BluetoothRemoteGATTCharacteristic;
+    /** Optional: not all gen1 profiles expose FFF4; gyro then comes from the polled FFF5 frames. */
+    private readonly chrGyroNotify: BluetoothRemoteGATTCharacteristic | null;
 
     private polling = false;
     private prevMoveCnt = -1;
-    private movePollTicks = 0;
-    private batteryPollTicks = 0;
+    private movesSinceStateRefresh = 0;
+    private nextBatteryReadAt = 0;
     private pollFailures = 0;
     private teardown = false;
     private lastBatteryLevel: number | null = null;
     private forceNextBatteryEmission = false;
+    /** Serializes every GATT read: explicit commands must not overlap the poll loop. */
+    private gattChain: Promise<unknown> = Promise.resolve();
 
     private readonly onGattDisconnected: () => void;
 
@@ -114,7 +144,7 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         chrMoves: BluetoothRemoteGATTCharacteristic,
         chrFacelets: BluetoothRemoteGATTCharacteristic,
         chrBattery: BluetoothRemoteGATTCharacteristic,
-        chrGyroNotify: BluetoothRemoteGATTCharacteristic
+        chrGyroNotify: BluetoothRemoteGATTCharacteristic | null
     ) {
         this.device = device;
         this.encrypter = encrypter;
@@ -147,13 +177,13 @@ export class GanGen1CubeConnection implements GanCubeConnection {
             fw.byteLength >= 3
                 ? (fw.getUint8(0) << 16) | (fw.getUint8(1) << 8) | fw.getUint8(2)
                 : 0;
-        if (!(n > 65543 && (16776704 & n) === 65536)) {
+        if (!(n > GEN1_FW_MIN && (GEN1_FW_MASK & n) === GEN1_FW_EXPECTED)) {
             throw new Error(`Invalid firmware version: 0x${n.toString(16)}`);
         }
         const hwRaw = await hwChar.readValue();
         const keyArr = deriveGen1Key(n, hwRaw);
         if (!keyArr) {
-            throw new Error('Invalid encryption key');
+            throw new Error(`Unsupported gen1 firmware key index 0x${((n >> 8) & 255).toString(16)}`);
         }
 
         const encrypter = new GanGen1Aes(keyArr);
@@ -162,7 +192,9 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         const chrMoves = await primary.getCharacteristic(def.GAN_GEN1_CHR_MOVES);
         const chrFacelets = await primary.getCharacteristic(def.GAN_GEN1_CHR_FACELETS);
         const chrBattery = await primary.getCharacteristic(def.GAN_GEN1_CHR_BATTERY);
-        const chrGyroNotify = await primary.getCharacteristic(def.GAN_GEN1_CHR_GYRO_NOTIFY);
+        // FFF4 is not part of every gen1 profile (the reference implementation does not
+        // use it at all): feature-detect instead of failing the whole connection.
+        const chrGyroNotify = await primary.getCharacteristic(def.GAN_GEN1_CHR_GYRO_NOTIFY).catch(() => null);
 
         const events$ = externalEvents$ ?? new Subject<GanCubeEvent>();
         const conn = new GanGen1CubeConnection(
@@ -176,12 +208,24 @@ export class GanGen1CubeConnection implements GanCubeConnection {
             chrGyroNotify
         );
 
-        chrGyroNotify.addEventListener('characteristicvaluechanged', conn.onGyroNotify);
-        await chrGyroNotify.startNotifications();
-
-        await conn.readInitialState();
-        await conn.readBattery();
+        try {
+            if (chrGyroNotify) {
+                chrGyroNotify.addEventListener('characteristicvaluechanged', conn.onGyroNotify);
+                await chrGyroNotify.startNotifications();
+            }
+            // Initial state and battery are part of setup: their failure fails create().
+            await conn.readInitialState(false);
+            await conn.readBattery(false);
+        } catch (e) {
+            conn.device.removeEventListener('gattserverdisconnected', conn.onGattDisconnected);
+            if (chrGyroNotify) {
+                chrGyroNotify.removeEventListener('characteristicvaluechanged', conn.onGyroNotify);
+                await chrGyroNotify.stopNotifications().catch(() => {});
+            }
+            throw e;
+        }
         conn.polling = true;
+        conn.nextBatteryReadAt = now() + GEN1_BATTERY_INTERVAL_MS;
         conn.schedulePoll(0);
 
         return conn;
@@ -198,10 +242,14 @@ export class GanGen1CubeConnection implements GanCubeConnection {
                 this.events$.next({ type: 'GYRO', timestamp: now(), quaternion: q });
             }
         } catch {
-            /* ignore corrupt frame */
+            /* corrupt frame */
         }
     };
 
+    /**
+     * Battery dedupe mirrors the shared event-bus policy on purpose: this legacy
+     * connection is also used standalone, without a bus in front of it.
+     */
     private emitBatteryLevel(rawLevel: number, timestamp = now()): void {
         if (!Number.isFinite(rawLevel)) {
             return;
@@ -220,35 +268,53 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         });
     }
 
-    private async readBattery(): Promise<void> {
-        try {
-            const e = await this.chrBattery.readValue();
+    /** All GATT reads are funneled through one chain so operations never overlap. */
+    private readDecrypted(chr: BluetoothRemoteGATTCharacteristic, minLength: number): Promise<Uint8Array | null> {
+        const run = async (): Promise<Uint8Array | null> => {
+            if (this.teardown) {
+                throw new Error('GAN gen1 connection is closed');
+            }
+            const e = await chr.readValue();
             const t = this.encrypter.decrypt(new Uint8Array(e.buffer, e.byteOffset, e.byteLength));
-            if (t.length < 8) return;
+            return t.length >= minLength ? t : null;
+        };
+        const result = this.gattChain.then(run, run);
+        this.gattChain = result.then(
+            () => undefined,
+            () => undefined,
+        );
+        return result;
+    }
+
+    private async readBattery(swallowErrors: boolean): Promise<void> {
+        try {
+            const t = await this.readDecrypted(this.chrBattery, 8);
+            if (!t) return;
             this.emitBatteryLevel(t[7]!);
-        } catch {
-            /* ignore */
+        } catch (e) {
+            if (!swallowErrors) throw e;
         }
     }
 
-    private async readInitialState(): Promise<void> {
+    private async readInitialState(swallowErrors: boolean): Promise<void> {
         try {
-            const e = await this.chrFacelets.readValue();
-            const t = this.encrypter.decrypt(new Uint8Array(e.buffer, e.byteOffset, e.byteLength));
+            const t = await this.readDecrypted(this.chrFacelets, GEN1_FACELETS_FRAME_LENGTH);
+            if (!t) return;
+            const facelets = parseGen1Facelets(t);
+            const state = cubieStateFromFacelets(facelets);
+            if (!state) {
+                if (!swallowErrors) throw new Error('GAN gen1 returned an invalid facelet state');
+                return; // corrupt read during polling: keep the previous state
+            }
             this.events$.next({
                 timestamp: now(),
                 type: 'FACELETS',
-                serial: 0,
-                facelets: parseGen1Facelets(t),
-                state: {
-                    CP: [...GEN1_SOLVED_STATE.CP],
-                    CO: [...GEN1_SOLVED_STATE.CO],
-                    EP: [...GEN1_SOLVED_STATE.EP],
-                    EO: [...GEN1_SOLVED_STATE.EO],
-                },
+                serial: this.prevMoveCnt >= 0 ? this.prevMoveCnt : 0,
+                facelets,
+                state,
             });
-        } catch {
-            /* ignore */
+        } catch (e) {
+            if (!swallowErrors) throw e;
         }
     }
 
@@ -260,66 +326,93 @@ export class GanGen1CubeConnection implements GanCubeConnection {
     private async pollLoop(): Promise<void> {
         if (!this.polling || this.teardown) return;
         try {
-            const e = await this.chrState.readValue();
-            const t = this.encrypter.decrypt(new Uint8Array(e.buffer, e.byteOffset, e.byteLength));
+            const t = await this.readDecrypted(this.chrState, GEN1_STATE_FRAME_LENGTH);
             this.pollFailures = 0;
+            if (t) {
+                await this.handleStateFrame(t);
+            }
+            if (now() >= this.nextBatteryReadAt) {
+                this.nextBatteryReadAt = now() + GEN1_BATTERY_INTERVAL_MS;
+                await this.readBattery(true);
+            }
+            this.schedulePoll(GEN1_POLL_INTERVAL_MS);
+        } catch {
+            this.pollFailures++;
+            if (this.pollFailures >= GEN1_MAX_POLL_FAILURES) {
+                // A wedged GATT session must not silently stop producing data forever
+                // while reporting itself healthy.
+                void this.handleDisconnect();
+                return;
+            }
+            const wait = Math.min(500 * 2 ** Math.min(this.pollFailures, 4), 2000);
+            this.schedulePoll(wait);
+        }
+    }
+
+    private async handleStateFrame(t: Uint8Array): Promise<void> {
+        // Gyro data lives in the state frame; use it only when FFF4 notifications are
+        // not available, so orientation is never emitted from two sources at once.
+        if (!this.chrGyroNotify) {
             const q = gyroFromState(t);
             if (q) {
                 this.events$.next({ type: 'GYRO', timestamp: now(), quaternion: q });
             }
-            const moveCnt = t[12]!;
-            if (this.prevMoveCnt === -1) {
-                this.prevMoveCnt = moveCnt;
-            } else if (moveCnt !== this.prevMoveCnt) {
-                let o = (moveCnt - this.prevMoveCnt) & 255;
-                if (o > 6) o = 6;
-                const moves: string[] = [];
-                for (let l = 0; l < 6; l++) {
-                    const u = t[13 + l]!;
-                    moves.unshift('URFDLB'.charAt(~~(u / 3)) + " 2'".charAt(u % 3));
-                }
-                const moveData = await this.chrMoves.readValue();
-                const mt = this.encrypter.decrypt(
-                    new Uint8Array(moveData.buffer, moveData.byteOffset, moveData.byteLength)
-                );
-                const stamps: number[] = [];
-                for (let r = 0; r < 9; r++) {
-                    stamps.unshift(mt[2 * r + 1]! | (mt[2 * r + 2]! << 8));
-                }
-                const ts = now();
-                for (let r = o - 1; r >= 0; r--) {
-                    const d = moves[r]?.trim();
-                    if (!d) continue;
-                    const f = 'URFDLB'.indexOf(d[0]!);
-                    const h = moveDirectionFromNotation(d);
-                    this.events$.next({
-                        timestamp: ts,
-                        type: 'MOVE',
-                        serial: (moveCnt - r) & 255,
-                        face: f,
-                        direction: h,
-                        move: d,
-                        cubeTimestamp: stamps[r] ?? null,
-                        localTimestamp: ts,
-                    });
-                }
-                this.prevMoveCnt = moveCnt;
+        }
+        const moveCnt = t[12]!;
+        if (this.prevMoveCnt === -1) {
+            this.prevMoveCnt = moveCnt;
+            return;
+        }
+        if (moveCnt === this.prevMoveCnt) {
+            return;
+        }
+        let o = (moveCnt - this.prevMoveCnt) & 255;
+        if (o > 6) o = 6;
+        const moves: string[] = [];
+        let corrupt = false;
+        for (let l = 0; l < 6; l++) {
+            const u = t[13 + l]!;
+            if (u >= 18) {
+                corrupt = true;
             }
-            this.movePollTicks++;
-            if (this.movePollTicks >= 50) {
-                this.movePollTicks = 0;
-                await this.readInitialState();
+            moves.unshift('URFDLB'.charAt(~~(u / 3)) + " 2'".charAt(u % 3));
+        }
+        this.prevMoveCnt = moveCnt;
+        if (corrupt) {
+            // An out-of-range move code means the frame (or key) is unreliable:
+            // resynchronize the state instead of inventing moves.
+            await this.readInitialState(true);
+            return;
+        }
+        const mt = await this.readDecrypted(this.chrMoves, GEN1_TIMING_FRAME_LENGTH);
+        const stamps: number[] = [];
+        if (mt) {
+            for (let r = 0; r < 9; r++) {
+                stamps.unshift(mt[2 * r + 1]! | (mt[2 * r + 2]! << 8));
             }
-            this.batteryPollTicks += 30;
-            if (this.batteryPollTicks >= 60_000) {
-                this.batteryPollTicks = 0;
-                await this.readBattery();
-            }
-            this.schedulePoll(30);
-        } catch {
-            this.pollFailures++;
-            const wait = Math.min(500 * 2 ** Math.min(this.pollFailures, 4), 2000);
-            this.schedulePoll(wait);
+        }
+        const ts = now();
+        for (let r = o - 1; r >= 0; r--) {
+            const d = moves[r]?.trim();
+            if (!d) continue;
+            const f = 'URFDLB'.indexOf(d[0]!);
+            const h = moveDirectionFromNotation(d);
+            this.events$.next({
+                timestamp: ts,
+                type: 'MOVE',
+                serial: (moveCnt - r) & 255,
+                face: f,
+                direction: h,
+                move: d,
+                cubeTimestamp: stamps[r] ?? null,
+                // Only the newest move was actually observed at this host time.
+                localTimestamp: r === 0 ? ts : null,
+            });
+        }
+        this.movesSinceStateRefresh += o;
+        if (this.movesSinceStateRefresh >= GEN1_MOVES_PER_STATE_REFRESH) {
+            this.movesSinceStateRefresh = 0;
+            await this.readInitialState(true);
         }
     }
 
@@ -330,11 +423,13 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         this.lastBatteryLevel = null;
         this.forceNextBatteryEmission = false;
         this.device.removeEventListener('gattserverdisconnected', this.onGattDisconnected);
-        try {
-            this.chrGyroNotify.removeEventListener('characteristicvaluechanged', this.onGyroNotify);
-            await this.chrGyroNotify.stopNotifications().catch(() => {});
-        } catch {
-            /* ignore */
+        if (this.chrGyroNotify) {
+            try {
+                this.chrGyroNotify.removeEventListener('characteristicvaluechanged', this.onGyroNotify);
+                await this.chrGyroNotify.stopNotifications().catch(() => {});
+            } catch {
+                /* ignore */
+            }
         }
         this.events$.next({ timestamp: now(), type: 'DISCONNECT' });
         this.events$.complete();
@@ -344,13 +439,20 @@ export class GanGen1CubeConnection implements GanCubeConnection {
         switch (command.type) {
             case 'REQUEST_BATTERY':
                 this.forceNextBatteryEmission = true;
-                await this.readBattery();
+                try {
+                    await this.readBattery(false);
+                } catch (e) {
+                    this.forceNextBatteryEmission = false;
+                    throw e;
+                }
                 break;
             case 'REQUEST_FACELETS':
-                await this.readInitialState();
+                await this.readInitialState(false);
                 break;
             default:
-                break;
+                // Fail loud: gen1 has no hardware-info or reset command, and a silent
+                // success would hide the capability mismatch from legacy callers.
+                throw new Error(`GAN gen1 does not support ${command.type}`);
         }
     }
 

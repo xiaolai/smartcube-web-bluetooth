@@ -32,11 +32,49 @@ type GanGenerationSetup = {
     service: string;
     command: string;
     state: string;
-    key: () => { key: number[]; iv: number[] };
+    key: (device: BluetoothDevice) => { readonly key: readonly number[]; readonly iv: readonly number[] };
     Encrypter: typeof GanGen2CubeEncrypter;
     createDriver: () => GanProtocolDriver;
     validate: (plaintext: Uint8Array) => boolean;
 };
+
+/**
+ * Tried in declaration order — a device exposing several recognized services (e.g. a
+ * compatibility profile) deliberately resolves to the earliest generation listed here.
+ */
+const GAN_GENERATION_SETUPS: readonly GanGenerationSetup[] = [
+    {
+        generation: 'gen2',
+        service: def.GAN_GEN2_SERVICE,
+        command: def.GAN_GEN2_COMMAND_CHARACTERISTIC,
+        state: def.GAN_GEN2_STATE_CHARACTERISTIC,
+        /** MoYu AI 2023 speaks the GAN gen2 protocol with its own key. */
+        key: (device) => (device.name?.startsWith('AiCube') ? def.GAN_ENCRYPTION_KEYS[1]! : def.GAN_ENCRYPTION_KEYS[0]!),
+        Encrypter: GanGen2CubeEncrypter,
+        createDriver: () => new GanGen2ProtocolDriver(),
+        validate: isValidGanGen2Packet,
+    },
+    {
+        generation: 'gen3',
+        service: def.GAN_GEN3_SERVICE,
+        command: def.GAN_GEN3_COMMAND_CHARACTERISTIC,
+        state: def.GAN_GEN3_STATE_CHARACTERISTIC,
+        key: () => def.GAN_ENCRYPTION_KEYS[0]!,
+        Encrypter: GanGen3CubeEncrypter,
+        createDriver: () => new GanGen3ProtocolDriver(),
+        validate: isValidGanGen3Packet,
+    },
+    {
+        generation: 'gen4',
+        service: def.GAN_GEN4_SERVICE,
+        command: def.GAN_GEN4_COMMAND_CHARACTERISTIC,
+        state: def.GAN_GEN4_STATE_CHARACTERISTIC,
+        key: () => def.GAN_ENCRYPTION_KEYS[0]!,
+        Encrypter: GanGen4CubeEncrypter,
+        createDriver: () => new GanGen4ProtocolDriver(),
+        validate: isValidGanGen4Packet,
+    },
+];
 
 /**
  * Pick the GAN generation from the primary services, wire up encrypter, driver and packet
@@ -51,59 +89,26 @@ export async function createGanClassicConnection(
     mac: string,
     options?: { events$?: Subject<GanCubeEvent> }
 ): Promise<{ conn: GanCubeConnection; generation: GanGeneration } | null> {
-    // MAC bytes in reverse order salt the per-generation AES key/iv.
-    const salt = macStringToSaltOrThrow(mac);
-
-    const setups: GanGenerationSetup[] = [
-        {
-            generation: 'gen2',
-            service: def.GAN_GEN2_SERVICE,
-            command: def.GAN_GEN2_COMMAND_CHARACTERISTIC,
-            state: def.GAN_GEN2_STATE_CHARACTERISTIC,
-            /** MoYu AI 2023 speaks the GAN gen2 protocol with its own key. */
-            key: () => (device.name?.startsWith('AiCube') ? def.GAN_ENCRYPTION_KEYS[1] : def.GAN_ENCRYPTION_KEYS[0]),
-            Encrypter: GanGen2CubeEncrypter,
-            createDriver: () => new GanGen2ProtocolDriver(),
-            validate: isValidGanGen2Packet,
-        },
-        {
-            generation: 'gen3',
-            service: def.GAN_GEN3_SERVICE,
-            command: def.GAN_GEN3_COMMAND_CHARACTERISTIC,
-            state: def.GAN_GEN3_STATE_CHARACTERISTIC,
-            key: () => def.GAN_ENCRYPTION_KEYS[0],
-            Encrypter: GanGen3CubeEncrypter,
-            createDriver: () => new GanGen3ProtocolDriver(),
-            validate: isValidGanGen3Packet,
-        },
-        {
-            generation: 'gen4',
-            service: def.GAN_GEN4_SERVICE,
-            command: def.GAN_GEN4_COMMAND_CHARACTERISTIC,
-            state: def.GAN_GEN4_STATE_CHARACTERISTIC,
-            key: () => def.GAN_ENCRYPTION_KEYS[0],
-            Encrypter: GanGen4CubeEncrypter,
-            createDriver: () => new GanGen4ProtocolDriver(),
-            validate: isValidGanGen4Packet,
-        },
-    ];
-
-    for (const setup of setups) {
+    for (const setup of GAN_GENERATION_SETUPS) {
         if (!serviceUuids.has(normalizeUuid(setup.service))) {
             continue;
         }
+        // MAC bytes in reverse order salt the per-generation AES key/iv. Parsed only
+        // once a supported service matched, so an invalid MAC cannot preempt the
+        // documented null result for unsupported profiles.
+        const salt = macStringToSaltOrThrow(mac);
         const service = await gatt.getPrimaryService(setup.service);
         const commandCharacteristic = await service.getCharacteristic(setup.command);
         const stateCharacteristic = await service.getCharacteristic(setup.state);
-        const key = setup.key();
-        const encrypter = new setup.Encrypter(new Uint8Array(key.key), new Uint8Array(key.iv), salt);
+        const key = setup.key(device);
+        const encrypter = new setup.Encrypter(Uint8Array.from(key.key), Uint8Array.from(key.iv), salt);
         const conn = await GanCubeClassicConnection.create(
             device,
             commandCharacteristic,
             stateCharacteristic,
             encrypter,
             setup.createDriver(),
-            { validateDecrypted: setup.validate, events$: options?.events$ }
+            { validateDecrypted: setup.validate, events$: options?.events$, mac }
         );
         return { conn, generation: setup.generation };
     }

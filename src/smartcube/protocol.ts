@@ -4,8 +4,8 @@ import { SmartCubeConnection, MacAddressProvider } from './types';
 
 /** Single OR branch for `requestDevice` (`namePrefix`, exact `name`, or both via multiple entries). */
 export type SmartCubeNameFilter =
-    | { namePrefix: string }
-    | { name: string };
+    | { namePrefix: string; name?: never }
+    | { name: string; namePrefix?: never };
 
 interface SmartCubeProtocol {
     nameFilters: SmartCubeNameFilter[];
@@ -34,22 +34,45 @@ const protocolRegistry: SmartCubeProtocol[] = [];
 
 function registerProtocol(protocol: SmartCubeProtocol): void {
     if (!protocolRegistry.includes(protocol)) {
-        protocolRegistry.push(protocol);
+        // Freeze the descriptor so its filters/services cannot change under an
+        // in-flight connection attempt (selection and the picker options are built
+        // from these across awaits).
+        Object.freeze(protocol.nameFilters);
+        Object.freeze(protocol.optionalServices);
+        if (protocol.optionalManufacturerData) {
+            Object.freeze(protocol.optionalManufacturerData);
+        }
+        protocolRegistry.push(Object.freeze(protocol));
     }
 }
 
+/** Returns a snapshot: mutating the result cannot affect protocol selection. */
 function getRegisteredProtocols(): SmartCubeProtocol[] {
-    return protocolRegistry;
+    return [...protocolRegistry];
+}
+
+/** Remove a previously registered protocol (tests, dynamically loaded drivers). */
+function unregisterProtocol(protocol: SmartCubeProtocol): void {
+    const i = protocolRegistry.indexOf(protocol);
+    if (i >= 0) {
+        protocolRegistry.splice(i, 1);
+    }
 }
 
 /** Standard matchesDevice: the advertised name satisfies one of the protocol's name filters. */
 function deviceNameMatchesFilters(nameFilters: SmartCubeNameFilter[]): (device: BluetoothDevice) => boolean {
+    const filters = [...nameFilters];
     return (device) => {
-        const name = device.name || '';
-        return nameFilters.some((f) => ('name' in f ? name === f.name : name.startsWith(f.namePrefix)));
+        const name = device.name;
+        if (!name) {
+            return false; // an unnamed device matches nothing, not everything
+        }
+        return filters.some((f) =>
+            typeof f.name === 'string' ? name === f.name : f.namePrefix !== '' && name.startsWith(f.namePrefix),
+        );
     };
 }
 
 export type { SmartCubeProtocol };
-export { registerProtocol, getRegisteredProtocols, deviceNameMatchesFilters };
+export { registerProtocol, getRegisteredProtocols, unregisterProtocol, deviceNameMatchesFilters };
 export type { AttachmentContext, ConnectSmartCubeOptions, DeviceSelectionMode } from './attachment/types';
