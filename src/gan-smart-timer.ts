@@ -2,9 +2,10 @@
 import { Observable, Subject } from 'rxjs';
 
 // GAN Smart Timer bluetooth service and characteristic UUIDs
-const GAN_TIMER_SERVICE: string = '0000fff0-0000-1000-8000-00805f9b34fb';
-const GAN_TIMER_TIME_CHARACTERISTIC: string = '0000fff2-0000-1000-8000-00805f9b34fb';
-const GAN_TIMER_STATE_CHARACTERISTIC: string = '0000fff5-0000-1000-8000-00805f9b34fb';
+const BLE_UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
+const GAN_TIMER_SERVICE: string = '0000fff0' + BLE_UUID_SUFFIX;
+const GAN_TIMER_TIME_CHARACTERISTIC: string = '0000fff2' + BLE_UUID_SUFFIX;
+const GAN_TIMER_STATE_CHARACTERISTIC: string = '0000fff5' + BLE_UUID_SUFFIX;
 
 /**
  * GAN Smart Timer events/states
@@ -65,14 +66,21 @@ interface GanTimerConnection {
     events$: Observable<GanTimerEvent>;
     /** Retrieve last time values recored by timer */
     getRecordedTimes(): Promise<GanTimerRecordedTimes>;
-    /** Disconnect from timer */
-    disconnect(): void;
+    /** Disconnect from timer; resolves when teardown completed. Safe to call twice. */
+    disconnect(): Promise<void>;
 }
 
 /**
  * Construct time object
  */
 function makeTime(min: number, sec: number, msec: number): GanTimerTime {
+    if (
+        !Number.isInteger(min) || min < 0 ||
+        !Number.isInteger(sec) || sec < 0 || sec > 59 ||
+        !Number.isInteger(msec) || msec < 0 || msec > 999
+    ) {
+        throw new Error(`Invalid time components: ${min}:${sec}.${msec}`);
+    }
     return {
         minutes: min,
         seconds: sec,
@@ -199,7 +207,18 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
         }
     };
     stateCharacteristic.addEventListener('characteristicvaluechanged', onStateChanged);
-    await stateCharacteristic.startNotifications();
+    try {
+        await stateCharacteristic.startNotifications();
+    } catch (e) {
+        // Failed startup must not leave the listener installed or the device connected.
+        stateCharacteristic.removeEventListener('characteristicvaluechanged', onStateChanged);
+        try {
+            server.disconnect();
+        } catch {
+            /* ignore */
+        }
+        throw e;
+    }
 
     // This action retrieves latest recorded times from timer
     const getRecordedTimesAction = async (): Promise<GanTimerRecordedTimes> => {
@@ -213,16 +232,22 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
         };
     }
 
-    // Manual disconnect action
-    const disconnectAction = async () => {
+    // Shared teardown for manual disconnect and the GATT disconnect event. Idempotent,
+    // and the server disconnect is not gated behind stopNotifications (a hung stop
+    // would otherwise keep the link open forever).
+    let tornDown = false;
+    const disconnectAction = async (): Promise<void> => {
+        if (tornDown) return;
+        tornDown = true;
         device.removeEventListener('gattserverdisconnected', disconnectAction);
         stateCharacteristic.removeEventListener('characteristicvaluechanged', onStateChanged);
-        await stateCharacteristic.stopNotifications().catch(() => { });
         eventSubject.next({ state: GanTimerState.DISCONNECT });
         eventSubject.complete();
+        const stop = stateCharacteristic.stopNotifications().catch(() => { });
         if (server.connected) {
             server.disconnect();
         }
+        await stop;
     }
     device.addEventListener('gattserverdisconnected', disconnectAction);
 

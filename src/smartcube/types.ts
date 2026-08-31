@@ -39,10 +39,13 @@ type SmartCubeFaceletsEvent = {
     serial?: number;
 };
 
+type Vector3 = { x: number; y: number; z: number };
+type Quaternion = { x: number; y: number; z: number; w: number };
+
 type SmartCubeGyroEvent = {
     type: "GYRO";
-    quaternion: { x: number; y: number; z: number; w: number };
-    velocity?: { x: number; y: number; z: number };
+    quaternion: Quaternion;
+    velocity?: Vector3;
 };
 
 type SmartCubeBatteryEvent = {
@@ -51,8 +54,8 @@ type SmartCubeBatteryEvent = {
 };
 
 type SmartCubeProtocolInfo = {
-    id: string;
-    name: string;
+    readonly id: string;
+    readonly name: string;
 };
 
 type SmartCubeHardwareEvent = {
@@ -115,21 +118,29 @@ interface SmartCubeConnection {
     readonly deviceName: string;
     readonly deviceMAC: string;
     readonly protocol: SmartCubeProtocolInfo;
-    /** Current capabilities; may change after connect (e.g. gyroscope support is detected lazily). */
-    readonly capabilities: SmartCubeCapabilities;
+    /** Current capabilities (frozen; may change after connect, e.g. lazy gyroscope detection). */
+    readonly capabilities: Readonly<SmartCubeCapabilities>;
     /** Live events only; state observed before subscription is available via state$ / getSnapshot(). */
-    events$: Observable<SmartCubeEvent>;
+    readonly events$: Observable<SmartCubeEvent>;
     /** Replays the current snapshot to each new subscriber, then every change; completes after disconnect. */
-    state$: Observable<SmartCubeSnapshot>;
+    readonly state$: Observable<SmartCubeSnapshot>;
     /** The current snapshot (frozen; a new object per revision). */
     getSnapshot(): SmartCubeSnapshot;
     sendCommand(command: SmartCubeCommand): Promise<void>;
     disconnect(): Promise<void>;
 }
 
+/**
+ * Custom source for the cube's Bluetooth MAC address. Called up to twice per connect:
+ * first with `isFallbackCall` falsy (return null to let automatic resolution continue),
+ * and again with `isFallbackCall: true` as the last resort once every automatic source
+ * has been exhausted.
+ */
 type MacAddressProvider = (device: BluetoothDevice, isFallbackCall?: boolean) => Promise<string | null>;
 
 export type {
+    Vector3,
+    Quaternion,
     SmartCubeEvent,
     SmartCubeEventMessage,
     SmartCubeMoveEvent,

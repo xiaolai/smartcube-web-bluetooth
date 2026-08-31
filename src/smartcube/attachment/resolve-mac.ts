@@ -65,7 +65,13 @@ export async function resolveCubeMac(
         const mfData = await waitForManufacturerData(
             device,
             context?.enableAddressSearch ? options.advertisementTimeoutsMs[1] : options.advertisementTimeoutsMs[0],
-            { earlyExitOnEmptyFirstAdvertisement: false, signal: context?.signal }
+            {
+                earlyExitOnEmptyFirstAdvertisement: false,
+                signal: context?.signal,
+                // Keep merging until the data actually parses to a MAC: an unrelated
+                // manufacturer entry must not preempt a later MAC-bearing frame.
+                resolveWhen: (mf) => options.parseFromManufacturerData(mf) !== null,
+            }
         );
         mac = options.parseFromManufacturerData(mfData);
     }

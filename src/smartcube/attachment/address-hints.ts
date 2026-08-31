@@ -55,6 +55,12 @@ function mergeManufacturerDataInto(
 
 export type WaitForManufacturerDataOptions = {
     /**
+     * Resolve early only when this predicate accepts the merged data; otherwise keep
+     * merging frames until the timeout. Defaults to "any non-empty map", which lets an
+     * unrelated manufacturer entry preempt a later MAC-bearing advertisement.
+     */
+    resolveWhen?: (mf: BluetoothManufacturerData) => boolean;
+    /**
      * Resolve `null` as soon as the first advertisement arrives without manufacturer data,
      * instead of merging frames until the timeout. Defaults to true for `WCU_*` names (MoYu32
      * rarely exposes useful data in the pre-connect pass; keeps connect snappy) and false
@@ -118,8 +124,11 @@ export async function waitForManufacturerData(
             sawAdvertisement = true;
 
             if (merged.size > 0) {
-                finish(merged as unknown as BluetoothManufacturerData);
-                return;
+                const mergedData = merged as unknown as BluetoothManufacturerData;
+                if (!options?.resolveWhen || options.resolveWhen(mergedData)) {
+                    finish(mergedData);
+                    return;
+                }
             }
             if (emptyFirstAdvExit && isFirstAdv) {
                 finish(null);
@@ -132,10 +141,16 @@ export async function waitForManufacturerData(
 
         device.addEventListener('advertisementreceived', onAdvEvent);
         signal?.addEventListener('abort', onAbort, { once: true });
-        device.watchAdvertisements({ signal: abortController.signal }).catch(() => {
+        try {
+            device.watchAdvertisements({ signal: abortController.signal }).catch(() => {
+                clearTimeout(maxTimer);
+                finish(null);
+            });
+        } catch {
+            // A synchronous throw must clean up exactly like an async rejection.
             clearTimeout(maxTimer);
             finish(null);
-        });
+        }
     });
 }
 
@@ -151,8 +166,10 @@ export function macFromGanManufacturerData(mf: BluetoothManufacturerData | DataV
             return new DataView(manufacturerData.buffer.slice(start, Math.max(start, end)));
         }
         for (const id of ganDef.GAN_CIC_LIST) {
-            if (manufacturerData.has(id)) {
-                const value = manufacturerData.get(id)!;
+            const value = manufacturerData.get(id);
+            if (value && value.byteLength >= 6) {
+                // Entries too short to carry a MAC are skipped so a later valid
+                // company-id entry still gets its chance.
                 const start = value.byteOffset;
                 const end = value.byteOffset + Math.min(value.byteLength, 9);
                 return new DataView(value.buffer.slice(start, end));
