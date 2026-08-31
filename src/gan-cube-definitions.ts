@@ -1,15 +1,27 @@
+/** Key/iv used by GAN Gen2, Gen3 and Gen4 cubes (also gen1 key-table rows 2/3). */
+const GAN_GEN2_BASE_KEY: readonly number[] = Object.freeze(
+    [0x01, 0x02, 0x42, 0x28, 0x31, 0x91, 0x16, 0x07, 0x20, 0x05, 0x18, 0x54, 0x42, 0x11, 0x12, 0x53]);
+const GAN_GEN2_BASE_IV: readonly number[] = Object.freeze(
+    [0x11, 0x03, 0x32, 0x28, 0x21, 0x01, 0x76, 0x27, 0x20, 0x95, 0x78, 0x14, 0x32, 0x12, 0x02, 0x43]);
+/** Key/iv used by MoYu AI 2023 (also gen1 key-table rows 4/5). */
+const MOYU_AI_2023_KEY: readonly number[] = Object.freeze(
+    [0x05, 0x12, 0x02, 0x45, 0x02, 0x01, 0x29, 0x56, 0x12, 0x78, 0x12, 0x76, 0x81, 0x01, 0x08, 0x03]);
+const MOYU_AI_2023_IV: readonly number[] = Object.freeze(
+    [0x01, 0x44, 0x28, 0x06, 0x86, 0x21, 0x22, 0x28, 0x51, 0x05, 0x08, 0x31, 0x82, 0x02, 0x21, 0x06]);
+
 /**
  * AES-128 base key tables for GAN gen1 `deriveGen1Key`, indexed by the firmware major byte.
  * Previously stored LZ-compressed; decoded once with lz-string 1.5.0 `decompressFromEncodedURIComponent`.
+ * Rows 2-5 are the gen2 and MoYu key/iv above - one source of truth for those bytes.
  */
-export const GAN_GEN1_KEYS: readonly (readonly number[])[] = [
-    [198, 202, 21, 223, 79, 110, 19, 182, 119, 13, 230, 89, 58, 175, 186, 162],
-    [67, 226, 91, 214, 125, 220, 120, 216, 7, 96, 163, 218, 130, 60, 1, 241],
-    [1, 2, 66, 40, 49, 145, 22, 7, 32, 5, 24, 84, 66, 17, 18, 83],
-    [17, 3, 50, 40, 33, 1, 118, 39, 32, 149, 120, 20, 50, 18, 2, 67],
-    [5, 18, 2, 69, 2, 1, 41, 86, 18, 120, 18, 118, 129, 1, 8, 3],
-    [1, 68, 40, 6, 134, 33, 34, 40, 81, 5, 8, 49, 130, 2, 33, 6],
-];
+export const GAN_GEN1_KEYS: readonly (readonly number[])[] = Object.freeze([
+    Object.freeze([198, 202, 21, 223, 79, 110, 19, 182, 119, 13, 230, 89, 58, 175, 186, 162]),
+    Object.freeze([67, 226, 91, 214, 125, 220, 120, 216, 7, 96, 163, 218, 130, 60, 1, 241]),
+    GAN_GEN2_BASE_KEY,
+    GAN_GEN2_BASE_IV,
+    MOYU_AI_2023_KEY,
+    MOYU_AI_2023_IV,
+]);
 
 /** GAN gen1 primary GATT service (356i “API v1”). */
 export const GAN_GEN1_PRIMARY_SERVICE = "0000fff0-0000-1000-8000-00805f9b34fb";
@@ -45,17 +57,19 @@ export const GAN_GEN4_COMMAND_CHARACTERISTIC = "0000fff5-0000-1000-8000-00805f9b
 export const GAN_GEN4_STATE_CHARACTERISTIC = "0000fff6-0000-1000-8000-00805f9b34fb";
 
 /** List of Company Identifier Codes, fill with all values [0x0001, 0xFF01] possible for GAN cubes */
-export const GAN_CIC_LIST = Array(256).fill(undefined).map((_v, i) => (i << 8) | 0x01);
+export const GAN_CIC_LIST: readonly number[] = Object.freeze(
+    Array(256).fill(undefined).map((_v, i) => (i << 8) | 0x01));
 
 /**  List of encryption keys */
-export const GAN_ENCRYPTION_KEYS = [
-    {   /** Key used by GAN Gen2, Gen3 and Gen4 cubes */
-        key: [0x01, 0x02, 0x42, 0x28, 0x31, 0x91, 0x16, 0x07, 0x20, 0x05, 0x18, 0x54, 0x42, 0x11, 0x12, 0x53],
-        iv: [0x11, 0x03, 0x32, 0x28, 0x21, 0x01, 0x76, 0x27, 0x20, 0x95, 0x78, 0x14, 0x32, 0x12, 0x02, 0x43]
-    },
-    {   /** Key used by MoYu AI 2023 */
-        key: [0x05, 0x12, 0x02, 0x45, 0x02, 0x01, 0x29, 0x56, 0x12, 0x78, 0x12, 0x76, 0x81, 0x01, 0x08, 0x03],
-        iv: [0x01, 0x44, 0x28, 0x06, 0x86, 0x21, 0x22, 0x28, 0x51, 0x05, 0x08, 0x31, 0x82, 0x02, 0x21, 0x06]
-    }
-];
+export const GAN_ENCRYPTION_KEYS: readonly { readonly key: readonly number[]; readonly iv: readonly number[] }[] =
+    Object.freeze([
+        Object.freeze({ /** Key used by GAN Gen2, Gen3 and Gen4 cubes */
+            key: GAN_GEN2_BASE_KEY,
+            iv: GAN_GEN2_BASE_IV
+        }),
+        Object.freeze({ /** Key used by MoYu AI 2023 */
+            key: MOYU_AI_2023_KEY,
+            iv: MOYU_AI_2023_IV
+        })
+    ]);
 

@@ -130,6 +130,7 @@ class Moyu32Connection implements SmartCubeConnection {
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
         if (!value || !this.encrypter) return;
+        if (value.byteLength !== 20) return; // MoYu32 frames are exactly 20 bytes; drop malformed ones
         this.parseData(value);
     };
 

@@ -3,8 +3,12 @@ import aesjs from 'aes-js';
 
 // aes-js ships CommonJS only; a default import resolves in Node ESM, CJS and every bundler.
 
-/** aes-js block-cipher core with a precomputed key schedule (its typings only expose ByteSource). */
-type AesBlockCipher = { encrypt(block: number[]): number[]; decrypt(block: number[]): number[] };
+/**
+ * aes-js block-cipher core with a precomputed key schedule. It accepts arrays or typed
+ * arrays and returns Uint8Array; the cast below exists because its shipped typings only
+ * expose the ByteSource-based mode-of-operation API.
+ */
+type AesBlockCipher = { encrypt(block: number[]): Uint8Array; decrypt(block: number[]): Uint8Array };
 
 /**
  * Common cube encrypter interface
@@ -21,8 +25,7 @@ interface GanCubeEncrypter {
  */
 class GanGen2CubeEncrypter implements GanCubeEncrypter {
 
-    private _key: Uint8Array;
-    private _iv: Uint8Array;
+    private readonly _iv: Uint8Array;
     private readonly aes: AesBlockCipher;
 
     constructor(key: Uint8Array, iv: Uint8Array, salt: Uint8Array) {
@@ -32,14 +35,14 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
             throw new Error("Iv must be 16 bytes (128-bit) long");
         if (salt.length !== 6)
             throw new Error("Salt must be 6 bytes (48-bit) long");
-        // Apply salt to key and iv
-        this._key = new Uint8Array(key);
+        // Apply salt to key and iv; the salted key lives only in the AES key schedule.
+        const saltedKey = new Uint8Array(key);
         this._iv = new Uint8Array(iv);
         for (let i = 0; i < 6; i++) {
-            this._key[i] = (key[i] + salt[i]) % 0xFF;
+            saltedKey[i] = (key[i] + salt[i]) % 0xFF;
             this._iv[i] = (iv[i] + salt[i]) % 0xFF;
         }
-        this.aes = new aesjs.AES([...this._key]) as unknown as AesBlockCipher;
+        this.aes = new aesjs.AES([...saltedKey]) as unknown as AesBlockCipher;
     }
 
     /**
@@ -95,11 +98,15 @@ export type {
     GanCubeEncrypter
 };
 
-// Gen3 and gen4 use the same MAC-salted AES-128 scheme as gen2; the per-generation names are
-// kept for clarity at call sites and for backwards compatibility.
+// Gen3 and gen4 use the same MAC-salted AES-128 scheme as gen2. Named subclasses (not
+// aliases) preserve constructor identity: `instanceof GanGen3CubeEncrypter` and the
+// constructor name keep working for existing consumers.
+class GanGen3CubeEncrypter extends GanGen2CubeEncrypter {}
+class GanGen4CubeEncrypter extends GanGen2CubeEncrypter {}
+
 export {
     GanGen2CubeEncrypter,
-    GanGen2CubeEncrypter as GanGen3CubeEncrypter,
-    GanGen2CubeEncrypter as GanGen4CubeEncrypter
+    GanGen3CubeEncrypter,
+    GanGen4CubeEncrypter
 };
 

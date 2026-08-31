@@ -267,7 +267,7 @@ const ganProtocol: SmartCubeProtocol = {
         def.GAN_GEN3_SERVICE,
         def.GAN_GEN4_SERVICE,
     ],
-    optionalManufacturerData: def.GAN_CIC_LIST,
+    optionalManufacturerData: [...def.GAN_CIC_LIST],
     needsMac: true,
 
     matchesDevice: deviceNameMatchesFilters(GAN_NAME_FILTERS),

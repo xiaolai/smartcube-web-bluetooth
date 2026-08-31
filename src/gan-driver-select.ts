@@ -32,7 +32,7 @@ type GanGenerationSetup = {
     service: string;
     command: string;
     state: string;
-    key: () => { key: number[]; iv: number[] };
+    key: () => { readonly key: readonly number[]; readonly iv: readonly number[] };
     Encrypter: typeof GanGen2CubeEncrypter;
     createDriver: () => GanProtocolDriver;
     validate: (plaintext: Uint8Array) => boolean;
@@ -96,7 +96,7 @@ export async function createGanClassicConnection(
         const commandCharacteristic = await service.getCharacteristic(setup.command);
         const stateCharacteristic = await service.getCharacteristic(setup.state);
         const key = setup.key();
-        const encrypter = new setup.Encrypter(new Uint8Array(key.key), new Uint8Array(key.iv), salt);
+        const encrypter = new setup.Encrypter(Uint8Array.from(key.key), Uint8Array.from(key.iv), salt);
         const conn = await GanCubeClassicConnection.create(
             device,
             commandCharacteristic,

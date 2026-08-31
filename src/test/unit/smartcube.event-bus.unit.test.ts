@@ -98,7 +98,7 @@ describe('SmartCubeEventBus hardening', () => {
     const bus = new SmartCubeEventBus(CAPS);
     const seenByB: number[] = [];
     let emitted = false;
-    bus.events$.subscribe((e) => {
+    bus.events$.subscribe(() => {
       if (!emitted) {
         emitted = true;
         bus.emit(M(2)); // subscriber A reacts to the first move by emitting another
