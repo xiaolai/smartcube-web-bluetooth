@@ -8,7 +8,7 @@ import { throwIfAborted } from '../attachment/abort';
 import { createMoyu32SessionCrypto, type Moyu32SessionCrypto } from '../attachment/moyu32-session-crypto';
 import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, SOLVED_FACELET, moveDirectionFromNotation } from '../cubie-cube';
 import { now, findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
@@ -406,15 +406,14 @@ async function connectMoyu32Device(
     return conn;
 }
 
+const MOYU32_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: '^S' }, { namePrefix: 'WCU_' }, { namePrefix: 'WCU_MY3' }];
+
 const moyu32Protocol: SmartCubeProtocol = {
-    nameFilters: [{ namePrefix: '^S' }, { namePrefix: 'WCU_' }, { namePrefix: 'WCU_MY3' }],
+    nameFilters: MOYU32_NAME_FILTERS,
     optionalServices: [SERVICE_UUID],
     needsMac: true,
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('^S') || name.startsWith('WCU_') || name.startsWith('WCU_MY3');
-    },
+    matchesDevice: deviceNameMatchesFilters(MOYU32_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
         return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;

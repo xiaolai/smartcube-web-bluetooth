@@ -4,7 +4,7 @@ import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { throwIfAborted } from '../attachment/abort';
 import { getCachedMacForDevice, macFromGanManufacturerData, waitForManufacturerData } from '../attachment/address-hints';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import * as def from '../../gan-cube-definitions';
 import { GanGen1CubeConnection } from '../../gan-gen1';
 import {
@@ -220,8 +220,10 @@ async function connectGanDevice(
     );
 }
 
+const GAN_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'GAN' }, { namePrefix: 'MG' }, { namePrefix: 'AiCube' }];
+
 const ganProtocol: SmartCubeProtocol = {
-    nameFilters: [{ namePrefix: 'GAN' }, { namePrefix: 'MG' }, { namePrefix: 'AiCube' }],
+    nameFilters: GAN_NAME_FILTERS,
     optionalServices: [
         def.GAN_GEN1_PRIMARY_SERVICE,
         def.GAN_GEN1_DEVICE_INFO_SERVICE,
@@ -232,10 +234,7 @@ const ganProtocol: SmartCubeProtocol = {
     optionalManufacturerData: def.GAN_CIC_LIST,
     needsMac: true,
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('GAN') || name.startsWith('MG') || name.startsWith('AiCube');
-    },
+    matchesDevice: deviceNameMatchesFilters(GAN_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, device: BluetoothDevice): number {
         const g2 = normalizeUuid(def.GAN_GEN2_SERVICE);

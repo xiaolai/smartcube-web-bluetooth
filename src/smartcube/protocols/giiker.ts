@@ -3,7 +3,7 @@ import { Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, moveDirectionFromNotation } from '../cubie-cube';
 import { now, findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
@@ -353,18 +353,17 @@ class GiikerConnection implements SmartCubeConnection {
     }
 }
 
+const GIIKER_NAME_FILTERS: SmartCubeNameFilter[] = [
+    { namePrefix: 'Gi' },
+    { namePrefix: 'Mi Smart Magic Cube' },
+    { namePrefix: 'Hi-' },
+];
+
 const giikerProtocol: SmartCubeProtocol = {
-    nameFilters: [
-        { namePrefix: "Gi" },
-        { namePrefix: "Mi Smart Magic Cube" },
-        { namePrefix: "Hi-" }
-    ],
+    nameFilters: GIIKER_NAME_FILTERS,
     optionalServices: [SERVICE_UUID_DATA, SERVICE_UUID_RW],
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('Gi') || name.startsWith('Mi Smart Magic Cube') || name.startsWith('Hi-');
-    },
+    matchesDevice: deviceNameMatchesFilters(GIIKER_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
         return serviceUuids.has(normalizeUuid(SERVICE_UUID_DATA)) ? 115 : 0;

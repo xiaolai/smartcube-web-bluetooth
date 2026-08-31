@@ -8,7 +8,7 @@ import { parseMacBytes } from '../attachment/mac-address';
 import { crc16modbus, decryptQiYiBlocks, encryptQiYiMessage, qiyiHelloContent } from '../attachment/qiyi-wire';
 import { buildQiYiMacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeQiYiMac } from '../attachment/mac-probe-qiyi';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube } from '../cubie-cube';
 import { now, findCharacteristic, extractMacFromManufacturerData } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
@@ -359,19 +359,18 @@ async function connectQiYiDevice(
     return conn;
 }
 
+const QIYI_NAME_FILTERS: SmartCubeNameFilter[] = [
+    { namePrefix: 'QY-QYSC' },
+    { namePrefix: 'XMD-TornadoV4-i' },
+];
+
 const qiyiProtocol: SmartCubeProtocol = {
-    nameFilters: [
-        { namePrefix: "QY-QYSC" },
-        { namePrefix: "XMD-TornadoV4-i" }
-    ],
+    nameFilters: QIYI_NAME_FILTERS,
     optionalServices: [SERVICE_UUID],
     optionalManufacturerData: QIYI_CIC_LIST,
     needsMac: true,
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('QY-QYSC') || name.startsWith('XMD-TornadoV4-i');
-    },
+    matchesDevice: deviceNameMatchesFilters(QIYI_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
         return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;

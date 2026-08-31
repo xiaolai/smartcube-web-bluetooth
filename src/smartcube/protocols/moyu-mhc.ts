@@ -3,7 +3,7 @@ import { Subject } from 'rxjs';
 import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
-import { SmartCubeProtocol, registerProtocol } from '../protocol';
+import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, SOLVED_FACELET } from '../cubie-cube';
 import { now, findCharacteristic } from '../ble-utils';
 import {
@@ -363,16 +363,13 @@ class MoyuMhcConnection implements SmartCubeConnection {
     }
 }
 
+const MOYU_MHC_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'MHC' }];
+
 const moyuMhcProtocol: SmartCubeProtocol = {
-    nameFilters: [
-        { namePrefix: "MHC" }
-    ],
+    nameFilters: MOYU_MHC_NAME_FILTERS,
     optionalServices: [SERVICE_UUID],
 
-    matchesDevice(device: BluetoothDevice): boolean {
-        const name = device.name || '';
-        return name.startsWith('MHC');
-    },
+    matchesDevice: deviceNameMatchesFilters(MOYU_MHC_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
         return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;
