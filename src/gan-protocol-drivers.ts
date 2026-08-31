@@ -21,7 +21,7 @@ const sum: (arr: Array<number>) => number = arr => arr.reduce((a, v) => a + v, 0
  * Decode 7 corners + 11 edges at the given bit offsets and reconstruct the 8th corner /
  * 12th edge from the permutation-sum and orientation-parity invariants.
  */
-function decodeCornersEdges(msg: GanBitReader, offsets: { cp: number; co: number; ep: number; eo: number }): GanCubeState {
+export function decodeCornersEdges(msg: GanBitReader, offsets: { cp: number; co: number; ep: number; eo: number }): GanCubeState {
     const cp: Array<number> = [];
     const co: Array<number> = [];
     const ep: Array<number> = [];

@@ -1,32 +1,16 @@
 
 import { now } from './utils';
 import { GanCubeEncrypter } from './gan-cube-encrypter';
-import { GattWriteQueue } from './gan-write-queue';
 import { writeGattCharacteristicValue } from './gatt-characteristic-write';
 import { Observable, Subject } from 'rxjs';
 
-/** Command for requesting information about GAN Smart Cube hardware  */
-type GanCubeReqHardwareCommand = {
-    type: "REQUEST_HARDWARE";
+/**
+ * Command message: request hardware info, current facelets, battery level, or reset the
+ * cube's internal state to solved.
+ */
+type GanCubeCommand = {
+    type: "REQUEST_HARDWARE" | "REQUEST_FACELETS" | "REQUEST_BATTERY" | "REQUEST_RESET";
 };
-
-/** Command for requesting information about current facelets state  */
-type GanCubeReqFaceletsCommand = {
-    type: "REQUEST_FACELETS";
-};
-
-/** Command for requesting information about current battery level  */
-type GanCubeReqBatteryCommand = {
-    type: "REQUEST_BATTERY";
-};
-
-/** Command for resetting GAN Smart Cube internal facelets state to solved state */
-type GanCubeReqResetCommand = {
-    type: "REQUEST_RESET";
-};
-
-/** Command message */
-type GanCubeCommand = GanCubeReqHardwareCommand | GanCubeReqFaceletsCommand | GanCubeReqBatteryCommand | GanCubeReqResetCommand;
 
 /** 
  * Representation of GAN Smart Cube move
@@ -198,19 +182,19 @@ export type GanClassicConnectionOptions = {
  */
 class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnection {
 
-    device: BluetoothDeviceWithMAC;
-    commandCharacteristic: BluetoothRemoteGATTCharacteristic;
-    stateCharacteristic: BluetoothRemoteGATTCharacteristic;
+    readonly device: BluetoothDeviceWithMAC;
+    readonly commandCharacteristic: BluetoothRemoteGATTCharacteristic;
+    readonly stateCharacteristic: BluetoothRemoteGATTCharacteristic;
 
-    encrypter: GanCubeEncrypter;
-    driver: GanProtocolDriver;
+    readonly encrypter: GanCubeEncrypter;
+    readonly driver: GanProtocolDriver;
 
-    events$: Subject<GanCubeEvent>;
+    readonly events$: Subject<GanCubeEvent>;
 
     private readonly validateDecrypted?: (plaintext: Uint8Array) => boolean;
     private readonly explicitMac: string | null;
-    private readonly writeQueue = new GattWriteQueue();
     private disconnectOnce = false;
+    private inNotificationHandler = false;
 
     private constructor(
         device: BluetoothDeviceWithMAC,
@@ -252,23 +236,34 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         );
         conn.device.addEventListener('gattserverdisconnected', conn.onDisconnect);
         conn.stateCharacteristic.addEventListener('characteristicvaluechanged', conn.onStateUpdate);
-        await conn.stateCharacteristic.startNotifications();
+        try {
+            await conn.stateCharacteristic.startNotifications();
+        } catch (e) {
+            // Undo partial setup: a failed startup must not leave listeners installed.
+            conn.device.removeEventListener('gattserverdisconnected', conn.onDisconnect);
+            conn.stateCharacteristic.removeEventListener('characteristicvaluechanged', conn.onStateUpdate);
+            throw e;
+        }
+        if (conn.disconnectOnce) {
+            throw new Error('Device disconnected during connection setup');
+        }
         return conn;
     }
 
+    /** Legacy API contract: an unnamed device reports "GAN-XXXX", never null. */
     get deviceName(): string {
         return this.device.name || "GAN-XXXX";
     }
 
+    /** Legacy API contract: an unknown MAC reports the zero address, never null. */
     get deviceMAC(): string {
         return this.explicitMac || this.device.mac || "00:00:00:00:00:00";
     }
 
     async sendCommandMessage(message: Uint8Array): Promise<void> {
         const encryptedMessage = this.encrypter.encrypt(message);
-        return this.writeQueue.enqueue(() =>
-            writeGattCharacteristicValue(this.commandCharacteristic, encryptedMessage as BufferSource)
-        );
+        // writeGattCharacteristicValue already serializes writes per device.
+        return writeGattCharacteristicValue(this.commandCharacteristic, encryptedMessage as BufferSource);
     }
 
     /**
@@ -290,13 +285,25 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
     }
 
     private async handleNotification(raw: Uint8Array): Promise<void> {
+        this.inNotificationHandler = true;
         try {
-            const decryptedMessage = this.encrypter.decrypt(raw);
+            let decryptedMessage: Uint8Array;
+            try {
+                decryptedMessage = this.encrypter.decrypt(raw);
+            } catch {
+                return; // not a whole number of AES blocks: corrupt frame
+            }
             if (this.validateDecrypted && !this.validateDecrypted(decryptedMessage)) return;
-            const cubeEvents = await this.driver.handleStateEvent(this, decryptedMessage);
-            cubeEvents.forEach(e => this.events$.next(e));
-        } catch {
-            /* ignore corrupt frame */
+            try {
+                const cubeEvents = await this.driver.handleStateEvent(this, decryptedMessage);
+                cubeEvents.forEach(e => this.events$.next(e));
+            } catch (e) {
+                // A validated frame failing in the driver is a defect, not line noise:
+                // keep the stream alive but make the failure observable.
+                console.error('[gan] driver failed to handle a validated frame', e);
+            }
+        } finally {
+            this.inNotificationHandler = false;
         }
     }
 
@@ -306,6 +313,12 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
         this.stateCharacteristic.removeEventListener('characteristicvaluechanged', this.onStateUpdate);
         await this.stateCharacteristic.stopNotifications().catch(() => { });
+        if (!this.inNotificationHandler) {
+            // Drain in-flight notifications so their decoded events are delivered before
+            // the stream completes. Skipped when the disconnect originates inside the
+            // notification chain itself (awaiting it there would deadlock).
+            await this.notificationChain.catch(() => { });
+        }
         if (!this.events$.closed) {
             this.events$.next({ timestamp: now(), type: "DISCONNECT" });
             this.events$.complete();

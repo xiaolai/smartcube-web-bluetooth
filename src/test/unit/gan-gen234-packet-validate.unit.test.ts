@@ -113,10 +113,20 @@ describe('isValidGanGen2Packet', () => {
     const e = bytes16();
     // i=4 => 0x40
     e[0] = 0x40;
+    // The validator now requires a structurally valid state: encode the solved
+    // cube's real permutations (cp 0..6 at offset 12, ep 0..10 at offset 47).
+    for (let i = 0; i < 7; i++) setBitsBE(e, 12 + 3 * i, 3, i);
+    for (let i = 0; i < 11; i++) setBitsBE(e, 47 + 4 * i, 4, i);
     // Transmitted EO bits are at offsets 91..101. Setting only the first to 1
     // gives an odd sum, which is valid: it just means EO[11] = 1.
     setBit(e, 91, 1);
     expect(isValidGanGen2Packet(e)).toBe(true);
+  });
+
+  it('rejects the all-zero type 4 packet (impossible duplicate pieces)', () => {
+    const e = bytes16();
+    e[0] = 0x40;
+    expect(isValidGanGen2Packet(e)).toBe(false);
   });
 });
 
@@ -128,7 +138,7 @@ describe('isValidGanGen3Packet', () => {
   it('returns true for a minimal gen3 header with allowed n and non-zero r', () => {
     const e = bytes16();
     e[0] = 85; // i
-    e[1] = 2; // n in [1,2,6,7,16,17]
+    e[1] = 6; // n in [1,2,6,7,16,17]; 2 (FACELETS) now needs a real state body
     e[2] = 1; // r != 0
     expect(isValidGanGen3Packet(e)).toBe(true);
   });
