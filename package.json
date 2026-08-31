@@ -7,9 +7,16 @@
   "module": "./dist/esm/index.mjs",
   "main": "./dist/cjs/index.cjs",
   "exports": {
-    "types": "./dist/types/index.d.ts",
-    "import": "./dist/esm/index.mjs",
-    "require": "./dist/cjs/index.cjs"
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.mjs",
+      "require": "./dist/cjs/index.cjs",
+      "default": "./dist/esm/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "clean": "rm -rf dist/",
