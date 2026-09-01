@@ -30,36 +30,38 @@ function makeFixtureMhcTurnOnly(): FixtureSession {
   };
 }
 
-describe('moyuMhcProtocol.connect (synthetic)', () => {
-  it('emits MOVE and FACELETS from a turn notification even without v1 services', async () => {
-    const fixture = makeFixtureMhcTurnOnly();
-    const { device, replayer } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc', maxAutoFlushNotifies: 0 });
-
-    const conn = await moyuMhcProtocol.connect(device, undefined, attachmentContextFor(new Set([fixture.traffic[0]!.service])));
-    // SUPERSEDED: attachmentContextFor() builds this literal.
-    // {
-    //   serviceUuids: new Set([fixture.traffic[0]!.service]),
-    //   advertisementManufacturerData: null,
-    //   enableAddressSearch: false,
-    //   onStatus: undefined,
-    //   signal: undefined,
-    // }
-
-    // Seed faceStatus so a -2 turn crosses the 5↔4 threshold and yields a MOVE.
-    (conn as any).faceStatus[0] = 6;
-
-    const events: any[] = [];
-    const sub = conn.events$.subscribe({ next: (e) => events.push(e) });
-    await replayer.drainNotificationsAsync();
-    sub.unsubscribe();
-
-    expect(events.some((e) => e.type === 'MOVE')).toBe(true);
-    expect(events.some((e) => e.type === 'FACELETS')).toBe(true);
-
-    await conn.disconnect();
-  }, 10_000);
-});
-
+// SUPERSEDED: this forced a move by writing the private faceStatus through `as any`. moyu-mhc.session.test.ts
+// drives turns through the cube's own angles (v1 state sync) and covers forward, backward, multi-move,
+// unknown-face and truncated frames without touching driver internals.
+// describe('moyuMhcProtocol.connect (synthetic)', () => {
+//   it('emits MOVE and FACELETS from a turn notification even without v1 services', async () => {
+//     const fixture = makeFixtureMhcTurnOnly();
+//     const { device, replayer } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc', maxAutoFlushNotifies: 0 });
+//
+//     const conn = await moyuMhcProtocol.connect(device, undefined, attachmentContextFor(new Set([fixture.traffic[0]!.service])));
+//     // SUPERSEDED: attachmentContextFor() builds this literal.
+//     // {
+//     //   serviceUuids: new Set([fixture.traffic[0]!.service]),
+//     //   advertisementManufacturerData: null,
+//     //   enableAddressSearch: false,
+//     //   onStatus: undefined,
+//     //   signal: undefined,
+//     // }
+//
+//     // Seed faceStatus so a -2 turn crosses the 5↔4 threshold and yields a MOVE.
+//     (conn as any).faceStatus[0] = 6;
+//
+//     const events: any[] = [];
+//     const sub = conn.events$.subscribe({ next: (e) => events.push(e) });
+//     await replayer.drainNotificationsAsync();
+//     sub.unsubscribe();
+//
+//     expect(events.some((e) => e.type === 'MOVE')).toBe(true);
+//     expect(events.some((e) => e.type === 'FACELETS')).toBe(true);
+//
+//     await conn.disconnect();
+//   }, 10_000);
+// });
 
 describe('moyuMhcProtocol.connect gating', () => {
   it('reports facelets capability for turn-only devices (turn tracking emits FACELETS)', async () => {
