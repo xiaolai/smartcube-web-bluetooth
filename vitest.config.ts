@@ -15,10 +15,10 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       // Floor at the measured level; CI runs `test:coverage`, so coverage can only go up.
       thresholds: {
-        statements: 87,
-        branches: 84,
-        functions: 91,
-        lines: 87,
+        statements: 88,
+        branches: 85,
+        functions: 92,
+        lines: 88,
       },
     },
   },
