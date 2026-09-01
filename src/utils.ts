@@ -1,5 +1,6 @@
 
 import { GanCubeMove } from './gan-cube-protocol';
+import { CubieCube } from './smartcube/cubie-cube';
 
 /**
  * Return current host clock timestamp with millisecond precision
@@ -137,31 +138,32 @@ function cubeTimestampCalcSkew(cubeMoves: Array<GanCubeMove>): number {
     return Math.round((slope - 1) * 100000) / 1000;
 }
 
-const CORNER_FACELET_MAP = [
-    [8, 9, 20], // URF
-    [6, 18, 38], // UFL
-    [0, 36, 47], // ULB
-    [2, 45, 11], // UBR
-    [29, 26, 15], // DFR
-    [27, 44, 24], // DLF
-    [33, 53, 42], // DBL
-    [35, 17, 51]  // DRB
-];
-
-const EDGE_FACELET_MAP = [
-    [5, 10], // UR
-    [7, 19], // UF
-    [3, 37], // UL
-    [1, 46], // UB
-    [32, 16], // DR
-    [28, 25], // DF
-    [30, 43], // DL
-    [34, 52], // DB
-    [23, 12], // FR
-    [21, 41], // FL
-    [50, 39], // BL
-    [48, 14]  // BR
-];
+// SUPERSEDED: identical to cFacelet/eFacelet in smartcube/cubie-cube.ts, which now renders the facelets.
+// const CORNER_FACELET_MAP = [
+//     [8, 9, 20], // URF
+//     [6, 18, 38], // UFL
+//     [0, 36, 47], // ULB
+//     [2, 45, 11], // UBR
+//     [29, 26, 15], // DFR
+//     [27, 44, 24], // DLF
+//     [33, 53, 42], // DBL
+//     [35, 17, 51]  // DRB
+// ];
+//
+// const EDGE_FACELET_MAP = [
+//     [5, 10], // UR
+//     [7, 19], // UF
+//     [3, 37], // UL
+//     [1, 46], // UB
+//     [32, 16], // DR
+//     [28, 25], // DF
+//     [30, 43], // DL
+//     [34, 52], // DB
+//     [23, 12], // FR
+//     [21, 41], // FL
+//     [50, 39], // BL
+//     [48, 14]  // BR
+// ];
 
 function isPermutationOf(arr: Array<number>, size: number): boolean {
     if (arr.length !== size) {
@@ -215,22 +217,28 @@ function toKociembaFacelets(cp: Array<number>, co: Array<number>, ep: Array<numb
     if (eo.length !== 12 || eo.some(v => v !== 0 && v !== 1)) {
         throw new Error('toKociembaFacelets: eo must be 12 values in {0,1}');
     }
-    const faces = "URFDLB";
-    const facelets: Array<string> = [];
-    for (let i = 0; i < 54; i++) {
-        facelets[i] = faces[~~(i / 9)];
-    }
-    for (let i = 0; i < 8; i++) {
-        for (let p = 0; p < 3; p++) {
-            facelets[CORNER_FACELET_MAP[i][(p + co[i]) % 3]] = faces[~~(CORNER_FACELET_MAP[cp[i]][p] / 9)];
-        }
-    }
-    for (let i = 0; i < 12; i++) {
-        for (let p = 0; p < 2; p++) {
-            facelets[EDGE_FACELET_MAP[i][(p + eo[i]) % 2]] = faces[~~(EDGE_FACELET_MAP[ep[i]][p] / 9)];
-        }
-    }
-    return facelets.join('');
+    // CubieCube renders with the same geometry; it packs a corner as permutation | orientation << 3
+    // and an edge as permutation << 1 | orientation.
+    return new CubieCube()
+        .init(cp.map((p, i) => p | (co[i] << 3)), ep.map((p, i) => (p << 1) | eo[i]))
+        .toFaceCube();
+    // SUPERSEDED: a second copy of CubieCube.toFaceCube over the same tables.
+    // const faces = "URFDLB";
+    // const facelets: Array<string> = [];
+    // for (let i = 0; i < 54; i++) {
+    //     facelets[i] = faces[~~(i / 9)];
+    // }
+    // for (let i = 0; i < 8; i++) {
+    //     for (let p = 0; p < 3; p++) {
+    //         facelets[CORNER_FACELET_MAP[i][(p + co[i]) % 3]] = faces[~~(CORNER_FACELET_MAP[cp[i]][p] / 9)];
+    //     }
+    // }
+    // for (let i = 0; i < 12; i++) {
+    //     for (let p = 0; p < 2; p++) {
+    //         facelets[EDGE_FACELET_MAP[i][(p + eo[i]) % 2]] = faces[~~(EDGE_FACELET_MAP[ep[i]][p] / 9)];
+    //     }
+    // }
+    // return facelets.join('');
 }
 
 export {

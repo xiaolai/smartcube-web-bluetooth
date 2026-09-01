@@ -1,6 +1,5 @@
-import { Observable } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
-import { SmartCubeEventBus } from '../event-bus';
+import { SmartCubeConnection, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { GattSmartCubeConnection } from '../gatt-connection';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { resolveCubeMac } from '../attachment/resolve-mac';
@@ -11,12 +10,15 @@ import { buildQiYiMacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeQiYiMac } from '../attachment/mac-probe-qiyi';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube } from '../cubie-cube';
-import { now, findCharacteristic, extractMacFromManufacturerData } from '../ble-utils';
+import { findCharacteristic, extractMacFromManufacturerData } from '../ble-utils';
+import { now } from '../../utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
+import { QIYI_CUBE_CHARACTERISTIC, QIYI_SERVICE } from '../gatt-uuids';
 
-const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
-const SERVICE_UUID = '0000fff0' + UUID_SUFFIX;
-const CHRCT_UUID_CUBE = '0000fff6' + UUID_SUFFIX;
+// SUPERSEDED: UUIDs come from smartcube/gatt-uuids.ts, the single source for every brand.
+// const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
+// const SERVICE_UUID = '0000fff0' + UUID_SUFFIX;
+// const CHRCT_UUID_CUBE = '0000fff6' + UUID_SUFFIX;
 
 const QIYI_CIC_LIST = [0x0504];
 /** Kociemba facelet string for solved cube */
@@ -78,21 +80,15 @@ function collectQiYiStateChangeMoves(msg: number[], headerTs: number): [number, 
 
 const QIYI_PROTOCOL: SmartCubeProtocolInfo = { id: 'qiyi', name: 'QiYi' };
 
-class QiYiConnection implements SmartCubeConnection {
-    readonly deviceName: string;
-    readonly deviceMAC: string;
-    readonly protocol: SmartCubeProtocolInfo = QIYI_PROTOCOL;
-    private readonly bus = new SmartCubeEventBus({
-        gyroscope: false,
-        battery: true,
-        facelets: true,
-        hardware: true,
-        reset: false
-    });
-    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
-    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
+const QIYI_CAPABILITIES: SmartCubeCapabilities = {
+    gyroscope: false,
+    battery: true,
+    facelets: true,
+    hardware: true,
+    reset: false
+};
 
-    private device: BluetoothDevice;
+class QiYiConnection extends GattSmartCubeConnection {
     private cubeChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private curCubie = new CubieCube();
     private prevCubie = new CubieCube();
@@ -101,19 +97,28 @@ class QiYiConnection implements SmartCubeConnection {
     private closed = false;
 
     constructor(device: BluetoothDevice, mac: string) {
-        this.device = device;
-        this.deviceName = device.name || 'QiYi';
-        this.deviceMAC = mac;
+        super(device, QIYI_PROTOCOL, device.name || 'QiYi', mac, QIYI_CAPABILITIES);
     }
 
-    get capabilities(): SmartCubeCapabilities {
-        return this.bus.capabilities as SmartCubeCapabilities;
-    }
-
-    getSnapshot(): SmartCubeSnapshot {
-        return this.bus.getSnapshot();
-    }
-
+    // SUPERSEDED: the bus facade, device and lifecycle live in GattSmartCubeConnection.
+    // readonly deviceName: string;
+    // readonly deviceMAC: string;
+    // readonly protocol: SmartCubeProtocolInfo = QIYI_PROTOCOL;
+    // private readonly bus = new SmartCubeEventBus({ ...QIYI_CAPABILITIES });
+    // readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    // readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
+    // private device: BluetoothDevice;
+    // constructor(device: BluetoothDevice, mac: string) {
+    //     this.device = device;
+    //     this.deviceName = device.name || 'QiYi';
+    //     this.deviceMAC = mac;
+    // }
+    // get capabilities(): SmartCubeCapabilities {
+    //     return this.bus.capabilities as SmartCubeCapabilities;
+    // }
+    // getSnapshot(): SmartCubeSnapshot {
+    //     return this.bus.getSnapshot();
+    // }
 
     private sendMessage(content: number[]): Promise<void> {
         if (this.closed || !this.cubeChrct) return Promise.reject(new Error('[QiYi] Not connected'));
@@ -192,15 +197,15 @@ class QiYiConnection implements SmartCubeConnection {
         });
     }
 
-    private emitHardwareEvent(): void {
-        this.bus.emit({
-            timestamp: now(),
-            type: "HARDWARE",
-            hardwareName: this.deviceName,
-            gyroSupported: this.capabilities.gyroscope
-        });
-    }
-
+    // SUPERSEDED: GattSmartCubeConnection.emitHardwareEventFromName().
+    // private emitHardwareEvent(): void {
+    //     this.bus.emit({
+    //         timestamp: now(),
+    //         type: "HARDWARE",
+    //         hardwareName: this.deviceName,
+    //         gyroSupported: this.capabilities.gyroscope
+    //     });
+    // }
     private parseCubeData(msg: number[]): void {
         const timestamp = now();
         if (msg[0] !== 0xfe) return;
@@ -320,30 +325,37 @@ class QiYiConnection implements SmartCubeConnection {
         this.lastTs = readQiYiTimestampBE(msg, 3);
     }
 
-    /** Idempotent teardown shared by remote and explicit disconnects. */
-    private teardown(): void {
+    protected override releaseResources(): void {
         this.closed = true;
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
         if (this.cubeChrct) {
             this.cubeChrct.removeEventListener('characteristicvaluechanged', this.onCubeEvent);
             this.cubeChrct = null;
         }
-        this.bus.resetBatteryDedupe();
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
     }
 
-    private onDisconnect = (): void => {
-        this.teardown();
-    };
-
+    // SUPERSEDED: GattSmartCubeConnection.teardown() runs releaseResources() at the same point in the same order.
+    // /** Idempotent teardown shared by remote and explicit disconnects. */
+    // private teardown(): void {
+    //     this.closed = true;
+    //     this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+    //     if (this.cubeChrct) {
+    //         this.cubeChrct.removeEventListener('characteristicvaluechanged', this.onCubeEvent);
+    //         this.cubeChrct = null;
+    //     }
+    //     this.bus.resetBatteryDedupe();
+    //     this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+    //     this.bus.complete();
+    // }
+    //
+    // private onDisconnect = (): void => {
+    //     this.teardown();
+    // };
     async init(): Promise<void> {
-        this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
-        try {
+        await this.initialize(async () => {
             const gatt = await this.device.gatt!.connect();
-            const service = await gatt.getPrimaryService(SERVICE_UUID);
+            const service = await gatt.getPrimaryService(QIYI_SERVICE);
             const chrcts = await service.getCharacteristics();
-            this.cubeChrct = findCharacteristic(chrcts, CHRCT_UUID_CUBE);
+            this.cubeChrct = findCharacteristic(chrcts, QIYI_CUBE_CHARACTERISTIC);
 
             if (!this.cubeChrct) {
                 throw new Error('[QiYi] Cannot find required characteristic');
@@ -352,16 +364,20 @@ class QiYiConnection implements SmartCubeConnection {
             this.cubeChrct.addEventListener('characteristicvaluechanged', this.onCubeEvent);
             await this.cubeChrct.startNotifications();
             await this.sendHello();
-        } catch (e) {
-            this.teardown();
-            if (this.device.gatt?.connected) {
-                this.device.gatt.disconnect();
-            }
-            throw e;
-        }
+        });
+        // SUPERSEDED: GattSmartCubeConnection.initialize() owns the disconnect hook and the failure path.
+        // this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
+        // try {
+        // } catch (e) {
+        //     this.teardown();
+        //     if (this.device.gatt?.connected) {
+        //         this.device.gatt.disconnect();
+        //     }
+        //     throw e;
+        // }
     }
 
-    async sendCommand(command: SmartCubeCommand): Promise<void> {
+    override async sendCommand(command: SmartCubeCommand): Promise<void> {
         if (command.type === "REQUEST_FACELETS" || command.type === "REQUEST_BATTERY") {
             if (command.type === "REQUEST_BATTERY") {
                 this.bus.forceNextBattery();
@@ -377,23 +393,33 @@ class QiYiConnection implements SmartCubeConnection {
             }
             await this.sendHello();
         } else if (command.type === "REQUEST_HARDWARE") {
-            this.emitHardwareEvent();
+            this.emitHardwareEventFromName();
         }
     }
 
-    async disconnect(): Promise<void> {
-        const cubeChrct = this.cubeChrct;
-        this.teardown();
-        // Let any in-flight queued write settle before stopping notifications so the two
-        // GATT operations cannot collide.
-        await this.writeChain.catch(() => {});
-        if (cubeChrct) {
-            await cubeChrct.stopNotifications().catch(() => {});
-        }
-        if (this.device.gatt?.connected) {
-            this.device.gatt.disconnect();
-        }
+    protected override notifyingCharacteristics(): (BluetoothRemoteGATTCharacteristic | null)[] {
+        return [this.cubeChrct];
     }
+
+    /** Let any in-flight queued write settle before stopping notifications so the two GATT operations cannot collide. */
+    protected override async settleBeforeStopNotifications(): Promise<void> {
+        await this.writeChain.catch(() => {});
+    }
+
+    // SUPERSEDED: GattSmartCubeConnection.disconnect() stops notifyingCharacteristics() and drops the GATT link.
+    // async disconnect(): Promise<void> {
+    //     const cubeChrct = this.cubeChrct;
+    //     this.teardown();
+    //     // Let any in-flight queued write settle before stopping notifications so the two
+    //     // GATT operations cannot collide.
+    //     await this.writeChain.catch(() => {});
+    //     if (cubeChrct) {
+    //         await cubeChrct.stopNotifications().catch(() => {});
+    //     }
+    //     if (this.device.gatt?.connected) {
+    //         this.device.gatt.disconnect();
+    //     }
+    // }
 }
 
 function parseQiYiMacFromMf(mfData: BluetoothManufacturerData | DataView | null): string | null {
@@ -434,14 +460,14 @@ const QIYI_NAME_FILTERS: SmartCubeNameFilter[] = [
 
 const qiyiProtocol: SmartCubeProtocol = {
     nameFilters: QIYI_NAME_FILTERS,
-    optionalServices: [SERVICE_UUID],
+    optionalServices: [QIYI_SERVICE],
     optionalManufacturerData: QIYI_CIC_LIST,
     needsMac: true,
 
     matchesDevice: deviceNameMatchesFilters(QIYI_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
-        return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;
+        return serviceUuids.has(normalizeUuid(QIYI_SERVICE)) ? 110 : 0;
     },
 
     connect: connectQiYiDevice

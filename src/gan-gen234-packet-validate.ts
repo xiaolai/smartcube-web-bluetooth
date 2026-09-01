@@ -3,12 +3,14 @@
  */
 
 import { GanBitReader } from './gan-bit-reader';
-import { decodeCornersEdges } from './gan-protocol-drivers';
+import { decodeCornersEdges, GAN_ONE_HOT_FACE_CODES } from './gan-protocol-drivers';
 
-export { GanBitReader };
+// SUPERSEDED: callers import GanBitReader from gan-bit-reader, where it is defined.
+// export { GanBitReader };
 
-/** One-hot face codes used by gen3/gen4 MOVE frames, in URFDLB order. */
-const GAN_ONE_HOT_FACE_CODES: readonly number[] = [2, 32, 8, 1, 16, 4];
+// SUPERSEDED: GAN_ONE_HOT_FACE_CODES is shared with the drivers in gan-protocol-drivers.ts.
+// /** One-hot face codes used by gen3/gen4 MOVE frames, in URFDLB order. */
+// const GAN_ONE_HOT_FACE_CODES: readonly number[] = [2, 32, 8, 1, 16, 4];
 
 /**
  * Structural cube-state validation on a FACELETS payload: every corner/edge index in

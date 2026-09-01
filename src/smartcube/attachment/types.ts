@@ -47,4 +47,5 @@ export interface ConnectSmartCubeOptions {
     bluetooth?: import('../../bluetooth-source').BluetoothLike;
 }
 
-export type { BluetoothLike } from '../../bluetooth-source';
+// SUPERSEDED: nothing imports BluetoothLike from here; src/index.ts exports it from bluetooth-source.
+// export type { BluetoothLike } from '../../bluetooth-source';

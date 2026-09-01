@@ -6,6 +6,7 @@ import { decryptQiYiBlocks, encryptQiYiMessage, qiyiHelloContent } from '../../s
 import { parseMacBytes } from '../../smartcube/attachment/mac-address';
 import { CubieCube, SOLVED_FACELET } from '../../smartcube/cubie-cube';
 import type { SmartCubeEvent } from '../../smartcube/types';
+import { attachmentContextFor } from '../helpers/fixture-replay';
 
 const MAC = 'AA:BB:CC:DD:EE:FF';
 const SERVICE = '0000fff0-0000-1000-8000-00805f9b34fb';
@@ -72,13 +73,15 @@ describe('qiyi state-change reconciliation', () => {
       maxAutoFlushNotifies: 0,
     });
 
-    const conn = await qiyiProtocol.connect(device, async () => MAC, {
-      serviceUuids: new Set([SERVICE]),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await qiyiProtocol.connect(device, async () => MAC, attachmentContextFor(new Set([SERVICE])));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: new Set([SERVICE]),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
 
     const events: SmartCubeEvent[] = [];
     const sub = conn.events$.subscribe((e) => events.push(e));

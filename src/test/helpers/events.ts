@@ -1,50 +1,51 @@
-import type { SmartCubeEvent, SmartCubeCommand, SmartCubeConnection } from '../../smartcube/types';
+import type { SmartCubeEvent, SmartCubeConnection } from '../../smartcube/types';
 import { moveDirectionFromNotation } from '../../smartcube/cubie-cube';
 
-export type NormalizedEvent =
-  | { type: 'MOVE'; face: number; direction: number; move: string; cubeTimestamp: number | null }
-  | { type: 'FACELETS'; facelets: string }
-  | { type: 'GYRO'; quaternion: { x: number; y: number; z: number; w: number } }
-  | { type: 'BATTERY'; batteryLevel: number }
-  | {
-      type: 'HARDWARE';
-      hardwareName?: string;
-      softwareVersion?: string;
-      hardwareVersion?: string;
-      productDate?: string;
-      gyroSupported?: boolean;
-    }
-  | { type: 'DISCONNECT' };
-
-export function normalizeEvent(e: SmartCubeEvent): NormalizedEvent {
-  switch (e.type) {
-    case 'MOVE':
-      return {
-        type: 'MOVE',
-        face: e.face,
-        direction: e.direction,
-        move: e.move,
-        cubeTimestamp: e.cubeTimestamp ?? null,
-      };
-    case 'FACELETS':
-      return { type: 'FACELETS', facelets: e.facelets };
-    case 'GYRO':
-      return { type: 'GYRO', quaternion: e.quaternion };
-    case 'BATTERY':
-      return { type: 'BATTERY', batteryLevel: e.batteryLevel };
-    case 'HARDWARE':
-      return {
-        type: 'HARDWARE',
-        hardwareName: (e as any).hardwareName,
-        softwareVersion: (e as any).softwareVersion,
-        hardwareVersion: (e as any).hardwareVersion,
-        productDate: (e as any).productDate,
-        gyroSupported: (e as any).gyroSupported,
-      };
-    case 'DISCONNECT':
-      return { type: 'DISCONNECT' };
-  }
-}
+// SUPERSEDED: never imported by any test.
+// export type NormalizedEvent =
+//   | { type: 'MOVE'; face: number; direction: number; move: string; cubeTimestamp: number | null }
+//   | { type: 'FACELETS'; facelets: string }
+//   | { type: 'GYRO'; quaternion: { x: number; y: number; z: number; w: number } }
+//   | { type: 'BATTERY'; batteryLevel: number }
+//   | {
+//       type: 'HARDWARE';
+//       hardwareName?: string;
+//       softwareVersion?: string;
+//       hardwareVersion?: string;
+//       productDate?: string;
+//       gyroSupported?: boolean;
+//     }
+//   | { type: 'DISCONNECT' };
+//
+// export function normalizeEvent(e: SmartCubeEvent): NormalizedEvent {
+//   switch (e.type) {
+//     case 'MOVE':
+//       return {
+//         type: 'MOVE',
+//         face: e.face,
+//         direction: e.direction,
+//         move: e.move,
+//         cubeTimestamp: e.cubeTimestamp ?? null,
+//       };
+//     case 'FACELETS':
+//       return { type: 'FACELETS', facelets: e.facelets };
+//     case 'GYRO':
+//       return { type: 'GYRO', quaternion: e.quaternion };
+//     case 'BATTERY':
+//       return { type: 'BATTERY', batteryLevel: e.batteryLevel };
+//     case 'HARDWARE':
+//       return {
+//         type: 'HARDWARE',
+//         hardwareName: (e as any).hardwareName,
+//         softwareVersion: (e as any).softwareVersion,
+//         hardwareVersion: (e as any).hardwareVersion,
+//         productDate: (e as any).productDate,
+//         gyroSupported: (e as any).gyroSupported,
+//       };
+//     case 'DISCONNECT':
+//       return { type: 'DISCONNECT' };
+//   }
+// }
 
 export function collectEvents(conn: SmartCubeConnection): { events: SmartCubeEvent[]; unsubscribe: () => void } {
   const events: SmartCubeEvent[] = [];
@@ -96,13 +97,13 @@ export function fixtureExpectedLastFacelets(fixture: { events: { event: any }[] 
   return null;
 }
 
-export async function sendAllSupportedCommands(conn: SmartCubeConnection, commands: SmartCubeCommand[]): Promise<void> {
-  for (const cmd of commands) {
-    try {
-      await conn.sendCommand(cmd);
-    } catch {
-      // Some drivers intentionally ignore unsupported commands; tests should assert behavior separately.
-    }
-  }
-}
-
+// SUPERSEDED: never imported by any test.
+// export async function sendAllSupportedCommands(conn: SmartCubeConnection, commands: SmartCubeCommand[]): Promise<void> {
+//   for (const cmd of commands) {
+//     try {
+//       await conn.sendCommand(cmd);
+//     } catch {
+//       // Some drivers intentionally ignore unsupported commands; tests should assert behavior separately.
+//     }
+//   }
+// }

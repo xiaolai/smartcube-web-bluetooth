@@ -16,6 +16,39 @@ import type {
 /** Calculate sum of all numbers in array */
 const sum: (arr: Array<number>) => number = arr => arr.reduce((a, v) => a + v, 0);
 
+/** Live MOVE frames (gen3/gen4) carry the face as a one-hot 6-bit mask; the index is the URFDLB face. */
+export const GAN_ONE_HOT_FACE_CODES: readonly number[] = [2, 32, 8, 1, 16, 4];
+/** MOVE_HISTORY entries (gen3/gen4) carry the face as a 3-bit code; the index is the URFDLB face. */
+const GAN_HISTORY_FACE_CODES: readonly number[] = [1, 5, 3, 0, 4, 2];
+
+/** Standard notation from a URFDLB face index and direction bit (0 = CW, 1 = CCW): (1, 1) -> "R'". */
+function moveNotation(face: number, direction: number): string {
+    return ("URFDLB".charAt(face) + " '".charAt(direction)).trim();
+}
+
+/** ASCII field of `length` bytes starting at `bitOffset`. */
+function asciiField(msg: GanBitReader, bitOffset: number, length: number): string {
+    let text = '';
+    for (let i = 0; i < length; i++) {
+        text += String.fromCharCode(msg.getBitWord(bitOffset + i * 8, 8));
+    }
+    return text;
+}
+
+function batteryEvent(timestamp: number, level: number): GanCubeEvent {
+    return { type: "BATTERY", timestamp, batteryLevel: Math.min(level, 100) };
+}
+
+function faceletsEvent(timestamp: number, serial: number, state: GanCubeState): GanCubeEvent {
+    return {
+        type: "FACELETS",
+        serial,
+        timestamp,
+        facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
+        state,
+    };
+}
+
 /**
  * Decode 7 corners + 11 edges at the given bit offsets and reconstruct the 8th corner /
  * 12th edge from the permutation-sum and orientation-parity invariants.
@@ -186,6 +219,93 @@ class GanMoveHistoryBuffer {
     }
 }
 
+/** Bit offsets that differ between the otherwise identical gen3 and gen4 frame formats. */
+type GanGen34FrameLayout = {
+    /** 16-bit serial in FACELETS frames. */
+    faceletsSerial: number;
+    /** Corner/edge fields in FACELETS frames. */
+    faceletsState: { cp: number; co: number; ep: number; eo: number };
+    /** 8-bit start serial in MOVE_HISTORY frames. */
+    historySerial: number;
+    /** First 4-bit (face code, direction) entry in MOVE_HISTORY frames. */
+    historyMoves: number;
+};
+
+const GAN_GEN3_LAYOUT: GanGen34FrameLayout = {
+    faceletsSerial: 24,
+    faceletsState: { cp: 40, co: 61, ep: 77, eo: 121 },
+    historySerial: 24,
+    historyMoves: 32,
+};
+
+const GAN_GEN4_LAYOUT: GanGen34FrameLayout = {
+    faceletsSerial: 16,
+    faceletsState: { cp: 32, co: 53, ep: 69, eo: 113 },
+    historySerial: 16,
+    historyMoves: 24,
+};
+
+/**
+ * MOVE_HISTORY response (gen3/gen4): inject the recovered moves into the FIFO — the cube lists
+ * them newest serial first — then evict whatever is now contiguous.
+ */
+async function handleGen34MoveHistory(
+    history: GanMoveHistoryBuffer,
+    msg: GanBitReader,
+    timestamp: number,
+    dataLength: number,
+    layout: GanGen34FrameLayout
+): Promise<GanCubeEvent[]> {
+    const startSerial = msg.getBitWord(layout.historySerial, 8);
+    const count = (dataLength - 1) * 2;
+    for (let i = 0; i < count; i++) {
+        const face = GAN_HISTORY_FACE_CODES.indexOf(msg.getBitWord(layout.historyMoves + 4 * i, 3));
+        const direction = msg.getBitWord(layout.historyMoves + 3 + 4 * i, 1);
+        if (face >= 0) {
+            history.injectMissedMoveToBuffer({
+                type: "MOVE",
+                serial: (startSerial - i) & 0xFF,
+                timestamp: timestamp,
+                localTimestamp: null, // Missed and recovered events has no meaningfull local timestamps
+                cubeTimestamp: null,  // Cube hardware timestamp for missed move you should interpolate using cubeTimestampLinearFit
+                face: face,
+                direction: direction,
+                move: moveNotation(face, direction)
+            });
+        }
+    }
+    return history.evictMoveBuffer();
+}
+
+/**
+ * Periodic FACELETS frame (gen3/gen4): while the move stream is idle, use its serial to detect
+ * and recover missed moves, then decode the state.
+ */
+async function handleGen34Facelets(
+    history: GanMoveHistoryBuffer,
+    conn: GanCubeRawConnection,
+    msg: GanBitReader,
+    timestamp: number,
+    layout: GanGen34FrameLayout
+): Promise<GanCubeEvent[]> {
+    const serial = history.serial = msg.getBitWord(layout.faceletsSerial, 16, true) & 0xFF;
+
+    // Also check and recovery missed moves using periodic facelets event sent by cube
+    if (history.lastSerial !== -1) {
+        // Debounce the facelet event if there are active cube moves
+        // A null timestamp means no live move arrived at all - the stream is idle
+        // and recovery must be allowed, not skipped forever.
+        if (history.lastLocalTimestamp == null || (timestamp - history.lastLocalTimestamp) > 500) {
+            await history.checkIfMoveMissed(conn);
+        }
+    }
+
+    if (history.lastSerial === -1)
+        history.lastSerial = serial;
+
+    return [faceletsEvent(timestamp, serial, decodeCornersEdges(msg, layout.faceletsState))];
+}
+
 /**
  * Driver implementation for GAN Gen2 protocol, supported cubes:
  *  - GAN Mini ui FreePlay
@@ -247,7 +367,8 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                     for (let i = diff - 1; i >= 0; i--) {
                         const face = msg.getBitWord(12 + 5 * i, 4);
                         const direction = msg.getBitWord(16 + 5 * i, 1);
-                        const move = "URFDLB".charAt(face) + " '".charAt(direction);
+                        // SUPERSEDED: moveNotation().
+                        // const move = "URFDLB".charAt(face) + " '".charAt(direction);
                         let elapsed = msg.getBitWord(47 + 16 * i, 16);
                         if (elapsed === 0) { // In case of 16-bit cube timestamp register overflow
                             // Only substitute the host-clock gap once a baseline exists;
@@ -264,7 +385,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                             cubeTimestamp: this.cubeTimestamp,
                             face: face,
                             direction: direction,
-                            move: move.trim()
+                            move: moveNotation(face, direction)
                         });
                     }
                     this.lastMoveTimestamp = timestamp;
@@ -278,15 +399,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
             if (this.lastSerial === -1)
                 this.lastSerial = serial;
 
-            const state = decodeCornersEdges(msg, { cp: 12, co: 33, ep: 47, eo: 91 });
-
-            cubeEvents.push({
-                type: "FACELETS",
-                serial: serial,
-                timestamp: timestamp,
-                facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
-                state: state,
-            });
+            cubeEvents.push(faceletsEvent(timestamp, serial, decodeCornersEdges(msg, { cp: 12, co: 33, ep: 47, eo: 91 })));
 
         } else if (eventType === 0x05) { // HARDWARE
 
@@ -296,10 +409,12 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
             const swMinor = msg.getBitWord(32, 8);
             const gyroSupported = msg.getBitWord(104, 1);
 
-            let hardwareName = '';
-            for (let i = 0; i < 8; i++) {
-                hardwareName += String.fromCharCode(msg.getBitWord(i * 8 + 40, 8));
-            }
+            const hardwareName = asciiField(msg, 40, 8);
+            // SUPERSEDED: asciiField().
+            // let hardwareName = '';
+            // for (let i = 0; i < 8; i++) {
+            //     hardwareName += String.fromCharCode(msg.getBitWord(i * 8 + 40, 8));
+            // }
 
             cubeEvents.push({
                 type: "HARDWARE",
@@ -312,13 +427,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
 
         } else if (eventType === 0x09) { // BATTERY
 
-            const batteryLevel = msg.getBitWord(8, 8);
-
-            cubeEvents.push({
-                type: "BATTERY",
-                timestamp: timestamp,
-                batteryLevel: Math.min(batteryLevel, 100)
-            });
+            cubeEvents.push(batteryEvent(timestamp, msg.getBitWord(8, 8)));
 
         } else if (eventType === 0x0D) { // DISCONNECT
             conn.disconnect().catch(() => { /* already disconnected */ });
@@ -386,8 +495,9 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                     const serial = this.history.serial = msg.getBitWord(56, 16, true) & 0xFF;
 
                     const direction = msg.getBitWord(72, 2);
-                    const face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(74, 6));
-                    const move = "URFDLB".charAt(face) + " '".charAt(direction);
+                    const face = GAN_ONE_HOT_FACE_CODES.indexOf(msg.getBitWord(74, 6));
+                    // SUPERSEDED: moveNotation().
+                    // const move = "URFDLB".charAt(face) + " '".charAt(direction);
 
                     // put move event into FIFO buffer
                     if (face >= 0) {
@@ -399,7 +509,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                             cubeTimestamp: cubeTimestamp,
                             face: face,
                             direction: direction,
-                            move: move.trim()
+                            move: moveNotation(face, direction)
                         });
                     }
 
@@ -410,57 +520,61 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
             } else if (eventType === 0x06) { // MOVE_HISTORY
 
-                const startSerial = msg.getBitWord(24, 8);
-                const count = (dataLength - 1) * 2;
-
-                // inject missed moves into FIFO buffer
-                for (let i = 0; i < count; i++) {
-                    const face = [1, 5, 3, 0, 4, 2].indexOf(msg.getBitWord(32 + 4 * i, 3));
-                    const direction = msg.getBitWord(35 + 4 * i, 1);
-                    if (face >= 0) {
-                        const move = "URFDLB".charAt(face) + " '".charAt(direction);
-                        this.history.injectMissedMoveToBuffer({
-                            type: "MOVE",
-                            serial: (startSerial - i) & 0xFF,
-                            timestamp: timestamp,
-                            localTimestamp: null, // Missed and recovered events has no meaningfull local timestamps
-                            cubeTimestamp: null,  // Cube hardware timestamp for missed move you should interpolate using cubeTimestampLinearFit
-                            face: face,
-                            direction: direction,
-                            move: move.trim()
-                        });
-                    }
-                }
-
-                // evict move events from FIFO buffer
-                cubeEvents = await this.history.evictMoveBuffer();
+                cubeEvents = await handleGen34MoveHistory(this.history, msg, timestamp, dataLength, GAN_GEN3_LAYOUT);
+                // SUPERSEDED: handleGen34MoveHistory() — identical to gen4 except for the bit offsets.
+                // const startSerial = msg.getBitWord(24, 8);
+                // const count = (dataLength - 1) * 2;
+                //
+                // // inject missed moves into FIFO buffer
+                // for (let i = 0; i < count; i++) {
+                // const face = [1, 5, 3, 0, 4, 2].indexOf(msg.getBitWord(32 + 4 * i, 3));
+                // const direction = msg.getBitWord(35 + 4 * i, 1);
+                // if (face >= 0) {
+                // const move = "URFDLB".charAt(face) + " '".charAt(direction);
+                // this.history.injectMissedMoveToBuffer({
+                // type: "MOVE",
+                // serial: (startSerial - i) & 0xFF,
+                // timestamp: timestamp,
+                // localTimestamp: null, // Missed and recovered events has no meaningfull local timestamps
+                // cubeTimestamp: null,  // Cube hardware timestamp for missed move you should interpolate using cubeTimestampLinearFit
+                // face: face,
+                // direction: direction,
+                // move: move.trim()
+                // });
+                // }
+                // }
+                //
+                // // evict move events from FIFO buffer
+                // cubeEvents = await this.history.evictMoveBuffer();
 
             } else if (eventType === 0x02) { // FACELETS
 
-                const serial = this.history.serial = msg.getBitWord(24, 16, true) & 0xFF;
-
-                // Also check and recovery missed moves using periodic facelets event sent by cube
-                if (this.history.lastSerial !== -1) {
-                    // Debounce the facelet event if there are active cube moves
-                    // A null timestamp means no live move arrived at all - the stream is idle
-                    // and recovery must be allowed, not skipped forever.
-                    if (this.history.lastLocalTimestamp == null || (timestamp - this.history.lastLocalTimestamp) > 500) {
-                        await this.history.checkIfMoveMissed(conn);
-                    }
-                }
-
-                if (this.history.lastSerial === -1)
-                    this.history.lastSerial = serial;
-
-                const state = decodeCornersEdges(msg, { cp: 40, co: 61, ep: 77, eo: 121 });
-
-                cubeEvents.push({
-                    type: "FACELETS",
-                    serial: serial,
-                    timestamp: timestamp,
-                    facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
-                    state: state,
-                });
+                cubeEvents = await handleGen34Facelets(this.history, conn, msg, timestamp, GAN_GEN3_LAYOUT);
+                // SUPERSEDED: handleGen34Facelets() — identical to gen4 except for the bit offsets.
+                // const serial = this.history.serial = msg.getBitWord(24, 16, true) & 0xFF;
+                //
+                // // Also check and recovery missed moves using periodic facelets event sent by cube
+                // if (this.history.lastSerial !== -1) {
+                // // Debounce the facelet event if there are active cube moves
+                // // A null timestamp means no live move arrived at all - the stream is idle
+                // // and recovery must be allowed, not skipped forever.
+                // if (this.history.lastLocalTimestamp == null || (timestamp - this.history.lastLocalTimestamp) > 500) {
+                // await this.history.checkIfMoveMissed(conn);
+                // }
+                // }
+                //
+                // if (this.history.lastSerial === -1)
+                // this.history.lastSerial = serial;
+                //
+                // const state = decodeCornersEdges(msg, { cp: 40, co: 61, ep: 77, eo: 121 });
+                //
+                // cubeEvents.push({
+                // type: "FACELETS",
+                // serial: serial,
+                // timestamp: timestamp,
+                // facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
+                // state: state,
+                // });
 
             } else if (eventType === 0x07) { // HARDWARE
 
@@ -469,10 +583,12 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
                 const hwMajor = msg.getBitWord(80, 4);
                 const hwMinor = msg.getBitWord(84, 4);
 
-                let hardwareName = '';
-                for (let i = 0; i < 5; i++) {
-                    hardwareName += String.fromCharCode(msg.getBitWord(i * 8 + 32, 8));
-                }
+                const hardwareName = asciiField(msg, 32, 5);
+                // SUPERSEDED: asciiField().
+                // let hardwareName = '';
+                // for (let i = 0; i < 5; i++) {
+                //     hardwareName += String.fromCharCode(msg.getBitWord(i * 8 + 32, 8));
+                // }
 
                 cubeEvents.push({
                     type: "HARDWARE",
@@ -485,13 +601,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
             } else if (eventType === 0x10) { // BATTERY
 
-                const batteryLevel = msg.getBitWord(24, 8);
-
-                cubeEvents.push({
-                    type: "BATTERY",
-                    timestamp: timestamp,
-                    batteryLevel: Math.min(batteryLevel, 100)
-                });
+                cubeEvents.push(batteryEvent(timestamp, msg.getBitWord(24, 8)));
 
             } else if (eventType === 0x11) { // DISCONNECT
                 conn.disconnect().catch(() => { /* already disconnected */ });
@@ -587,8 +697,9 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                     this.history.serial = serial;
 
                     const direction = msg.getBitWord(off + 64, 2);
-                    const face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(off + 66, 6));
-                    const move = "URFDLB".charAt(face) + " '".charAt(direction);
+                    const face = GAN_ONE_HOT_FACE_CODES.indexOf(msg.getBitWord(off + 66, 6));
+                    // SUPERSEDED: moveNotation().
+                    // const move = "URFDLB".charAt(face) + " '".charAt(direction);
 
                     if (face < 0) {
                         break;
@@ -602,7 +713,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                         cubeTimestamp: cubeTimestamp,
                         face: face,
                         direction: direction,
-                        move: move.trim()
+                        move: moveNotation(face, direction)
                     });
                     this.history.lastLocalTimestamp = timestamp;
                     off += 72;
@@ -615,57 +726,61 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
         } else if (eventType === 0xD1) { // MOVE_HISTORY
 
-            const startSerial = msg.getBitWord(16, 8);
-            const count = (dataLength - 1) * 2;
-
-            // inject missed moves into FIFO buffer
-            for (let i = 0; i < count; i++) {
-                const face = [1, 5, 3, 0, 4, 2].indexOf(msg.getBitWord(24 + 4 * i, 3));
-                const direction = msg.getBitWord(27 + 4 * i, 1);
-                if (face >= 0) {
-                    const move = "URFDLB".charAt(face) + " '".charAt(direction);
-                    this.history.injectMissedMoveToBuffer({
-                        type: "MOVE",
-                        serial: (startSerial - i) & 0xFF,
-                        timestamp: timestamp,
-                        localTimestamp: null, // Missed and recovered events has no meaningfull local timestamps
-                        cubeTimestamp: null,  // Cube hardware timestamp for missed move you should interpolate using cubeTimestampLinearFit
-                        face: face,
-                        direction: direction,
-                        move: move.trim()
-                    });
-                }
-            }
-
-            // evict move events from FIFO buffer
-            cubeEvents = await this.history.evictMoveBuffer();
+            cubeEvents = await handleGen34MoveHistory(this.history, msg, timestamp, dataLength, GAN_GEN4_LAYOUT);
+            // SUPERSEDED: handleGen34MoveHistory() — identical to gen3 except for the bit offsets.
+            // const startSerial = msg.getBitWord(16, 8);
+            // const count = (dataLength - 1) * 2;
+            //
+            // // inject missed moves into FIFO buffer
+            // for (let i = 0; i < count; i++) {
+            // const face = [1, 5, 3, 0, 4, 2].indexOf(msg.getBitWord(24 + 4 * i, 3));
+            // const direction = msg.getBitWord(27 + 4 * i, 1);
+            // if (face >= 0) {
+            // const move = "URFDLB".charAt(face) + " '".charAt(direction);
+            // this.history.injectMissedMoveToBuffer({
+            // type: "MOVE",
+            // serial: (startSerial - i) & 0xFF,
+            // timestamp: timestamp,
+            // localTimestamp: null, // Missed and recovered events has no meaningfull local timestamps
+            // cubeTimestamp: null,  // Cube hardware timestamp for missed move you should interpolate using cubeTimestampLinearFit
+            // face: face,
+            // direction: direction,
+            // move: move.trim()
+            // });
+            // }
+            // }
+            //
+            // // evict move events from FIFO buffer
+            // cubeEvents = await this.history.evictMoveBuffer();
 
         } else if (eventType === 0xED) { // FACELETS
 
-            const serial = this.history.serial = msg.getBitWord(16, 16, true) & 0xFF;
-
-            // Also check and recovery missed moves using periodic facelets event sent by cube
-            if (this.history.lastSerial !== -1) {
-                // Debounce the facelet event if there are active cube moves
-                // A null timestamp means no live move arrived at all - the stream is idle
-                // and recovery must be allowed, not skipped forever.
-                if (this.history.lastLocalTimestamp == null || (timestamp - this.history.lastLocalTimestamp) > 500) {
-                    await this.history.checkIfMoveMissed(conn);
-                }
-            }
-
-            if (this.history.lastSerial === -1)
-                this.history.lastSerial = serial;
-
-            const state = decodeCornersEdges(msg, { cp: 32, co: 53, ep: 69, eo: 113 });
-
-            cubeEvents.push({
-                type: "FACELETS",
-                serial: serial,
-                timestamp: timestamp,
-                facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
-                state: state,
-            });
+            cubeEvents = await handleGen34Facelets(this.history, conn, msg, timestamp, GAN_GEN4_LAYOUT);
+            // SUPERSEDED: handleGen34Facelets() — identical to gen3 except for the bit offsets.
+            // const serial = this.history.serial = msg.getBitWord(16, 16, true) & 0xFF;
+            //
+            // // Also check and recovery missed moves using periodic facelets event sent by cube
+            // if (this.history.lastSerial !== -1) {
+            // // Debounce the facelet event if there are active cube moves
+            // // A null timestamp means no live move arrived at all - the stream is idle
+            // // and recovery must be allowed, not skipped forever.
+            // if (this.history.lastLocalTimestamp == null || (timestamp - this.history.lastLocalTimestamp) > 500) {
+            // await this.history.checkIfMoveMissed(conn);
+            // }
+            // }
+            //
+            // if (this.history.lastSerial === -1)
+            // this.history.lastSerial = serial;
+            //
+            // const state = decodeCornersEdges(msg, { cp: 32, co: 53, ep: 69, eo: 113 });
+            //
+            // cubeEvents.push({
+            // type: "FACELETS",
+            // serial: serial,
+            // timestamp: timestamp,
+            // facelets: toKociembaFacelets(state.CP, state.CO, state.EP, state.EO),
+            // state: state,
+            // });
 
         } else if (eventType >= 0xFA && eventType <= 0xFE) { // HARDWARE
 
@@ -677,10 +792,12 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
                     this.hwInfo[eventType] = `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
                     break;
                 case 0xFC: // Hardware Name
-                    this.hwInfo[eventType] = '';
-                    for (let i = 0; i < dataLength - 1; i++) {
-                        this.hwInfo[eventType] += String.fromCharCode(msg.getBitWord(i * 8 + 24, 8));
-                    }
+                    this.hwInfo[eventType] = asciiField(msg, 24, dataLength - 1);
+                    // SUPERSEDED: asciiField().
+                    // this.hwInfo[eventType] = '';
+                    // for (let i = 0; i < dataLength - 1; i++) {
+                    //     this.hwInfo[eventType] += String.fromCharCode(msg.getBitWord(i * 8 + 24, 8));
+                    // }
                     break;
                 case 0xFD: // Software Version
                     const swMajor = msg.getBitWord(24, 4);
@@ -714,13 +831,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
         } else if (eventType === 0xEF) { // BATTERY
 
-            const batteryLevel = msg.getBitWord(8 + dataLength * 8, 8);
-
-            cubeEvents.push({
-                type: "BATTERY",
-                timestamp: timestamp,
-                batteryLevel: Math.min(batteryLevel, 100)
-            });
+            cubeEvents.push(batteryEvent(timestamp, msg.getBitWord(8 + dataLength * 8, 8)));
 
         } else if (eventType === 0xEA) { // DISCONNECT
             conn.disconnect().catch(() => { /* already disconnected */ });

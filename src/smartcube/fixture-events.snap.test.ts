@@ -3,7 +3,7 @@ import type { SmartCubeCapabilities, SmartCubeEvent, SmartCubeSnapshot } from '.
 import type { SmartCubeProtocol } from './protocol';
 import { FIXTURES, loadFixture } from '../test/fixtures';
 import { installMockBluetoothFromFixture } from '../test/bluetooth-mock';
-import { serviceUuidsFromFixture } from '../test/helpers/fixture-replay';
+import { attachmentContextFor, serviceUuidsFromFixture } from '../test/helpers/fixture-replay';
 import { ganProtocol } from './protocols/gan';
 import { giikerProtocol } from './protocols/giiker';
 import { goCubeProtocol } from './protocols/gocube';
@@ -193,13 +193,15 @@ describe('fixture event snapshots (full-field characterisation)', () => {
                 maxAutoFlushNotifies: c.maxAutoFlushNotifies,
             });
 
-            const conn = await c.protocol.connect(device, async () => fixture.device.mac ?? null, {
-                serviceUuids: serviceUuidsFromFixture(fixture),
-                advertisementManufacturerData: null,
-                enableAddressSearch: false,
-                onStatus: undefined,
-                signal: undefined,
-            });
+            const conn = await c.protocol.connect(device, async () => fixture.device.mac ?? null, attachmentContextFor(serviceUuidsFromFixture(fixture)));
+            // SUPERSEDED: attachmentContextFor() builds this literal.
+            // {
+            //     serviceUuids: serviceUuidsFromFixture(fixture),
+            //     advertisementManufacturerData: null,
+            //     enableAddressSearch: false,
+            //     onStatus: undefined,
+            //     signal: undefined,
+            // }
             const capsAtConnect = { ...conn.capabilities };
             const stateAtConnect = normaliseState(conn.getSnapshot());
 

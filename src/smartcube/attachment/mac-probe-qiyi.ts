@@ -4,10 +4,12 @@ import { parseMacBytes } from './mac-address';
 import { decryptQiYiBlocks, encryptQiYiMessage, qiyiHelloContent } from './qiyi-wire';
 import { isValidQiYiDecryptedPacket } from './packet-sanity';
 import { throwIfAborted } from './abort';
+import { QIYI_CUBE_CHARACTERISTIC, QIYI_SERVICE } from '../gatt-uuids';
 
-const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
-const QIYI_SVC = '0000fff0' + UUID_SUFFIX;
-const QIYI_CHR = '0000fff6' + UUID_SUFFIX;
+// SUPERSEDED: UUIDs come from smartcube/gatt-uuids.ts, the single source for every brand.
+// const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
+// const QIYI_SVC = '0000fff0' + UUID_SUFFIX;
+// const QIYI_CHR = '0000fff6' + UUID_SUFFIX;
 const HELLO_RETRY_INTERVAL_MS = 200;
 
 /**
@@ -33,11 +35,11 @@ export async function probeQiYiMac(
         await gatt.connect();
         throwIfAborted(signal);
     }
-    const service = await gatt.getPrimaryService(QIYI_SVC);
+    const service = await gatt.getPrimaryService(QIYI_SERVICE);
     throwIfAborted(signal);
     const chrcts = await service.getCharacteristics();
     throwIfAborted(signal);
-    const chrct = findCharacteristic(chrcts, QIYI_CHR);
+    const chrct = findCharacteristic(chrcts, QIYI_CUBE_CHARACTERISTIC);
     if (!chrct) {
         return false;
     }

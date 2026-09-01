@@ -1,12 +1,17 @@
 
 import { Observable, Subject } from 'rxjs';
 import { resolveBluetooth, type BluetoothSourceOptions } from './bluetooth-source';
+import { uuidFromShort } from './smartcube/gatt-uuids';
 
 // GAN Smart Timer bluetooth service and characteristic UUIDs
-const BLE_UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
-const GAN_TIMER_SERVICE: string = '0000fff0' + BLE_UUID_SUFFIX;
-const GAN_TIMER_TIME_CHARACTERISTIC: string = '0000fff2' + BLE_UUID_SUFFIX;
-const GAN_TIMER_STATE_CHARACTERISTIC: string = '0000fff5' + BLE_UUID_SUFFIX;
+// SUPERSEDED: the base-UUID suffix now lives in smartcube/gatt-uuids.ts.
+// const BLE_UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
+// const GAN_TIMER_SERVICE: string = '0000fff0' + BLE_UUID_SUFFIX;
+// const GAN_TIMER_TIME_CHARACTERISTIC: string = '0000fff2' + BLE_UUID_SUFFIX;
+// const GAN_TIMER_STATE_CHARACTERISTIC: string = '0000fff5' + BLE_UUID_SUFFIX;
+const GAN_TIMER_SERVICE: string = uuidFromShort('fff0');
+const GAN_TIMER_TIME_CHARACTERISTIC: string = uuidFromShort('fff2');
+const GAN_TIMER_STATE_CHARACTERISTIC: string = uuidFromShort('fff5');
 
 /**
  * GAN Smart Timer events/states

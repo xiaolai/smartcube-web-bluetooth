@@ -1,5 +1,6 @@
 
-import { now } from '../utils';
+// SUPERSEDED: `now` is imported from utils, where it is defined; ble-utils no longer re-exports it.
+// import { now } from '../utils';
 import { normalizeUuid } from './attachment/normalize-uuid';
 
 function findCharacteristic(
@@ -55,4 +56,6 @@ function extractMacFromManufacturerData(
     return mac.join(':');
 }
 
-export { now, findCharacteristic, extractMacFromManufacturerData };
+export { findCharacteristic, extractMacFromManufacturerData };
+// SUPERSEDED: see the import note above.
+// export { now, findCharacteristic, extractMacFromManufacturerData };

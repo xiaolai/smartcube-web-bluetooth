@@ -41,10 +41,13 @@ For bug fixes, write the failing test first and keep its failure output in the P
    `optionalServices`, `gattAffinity` (score the GATT profile; 0 when it isn't yours),
    `needsMac` if you derive keys from the address, and `connect`.
 2. Derive `matchesDevice` with `deviceNameMatchesFilters(yourFilters)`.
-3. Build the connection on `SmartCubeEventBus` (`src/smartcube/event-bus.ts`): `bus.emit()`
-   for events, `bus.emitBattery()` for battery (dedupe included), `bus.setCapabilities()` for
-   lazy capability detection, `bus.complete()` on disconnect. Expose `events$`, `state$`,
-   `getSnapshot()` from the bus.
+3. Extend `GattSmartCubeConnection` (`src/smartcube/gatt-connection.ts`): it owns the
+   `SmartCubeEventBus` (`this.bus.emit()` for events, `bus.emitBattery()` for battery with
+   dedupe, `bus.setCapabilities()` for lazy capability detection), exposes `events$`, `state$`
+   and `getSnapshot()`, and runs one teardown order for remote and explicit disconnects. You
+   implement `releaseResources()` (drop your listeners/refs), `notifyingCharacteristics()`
+   (what `disconnect()` must stop), `sendCommand()`, and an `init()` built on `initialize()`.
+   Put your UUIDs in `src/smartcube/gatt-uuids.ts`.
 4. Resolve the MAC (if needed) with `resolveCubeMac` (`src/smartcube/attachment/resolve-mac.ts`).
 5. Register with `registerProtocol()` via a side-effect import in `src/smartcube/index.ts`.
 6. Record a fixture, add it to `FIXTURES` and the snapshot cases, and add a replay test.

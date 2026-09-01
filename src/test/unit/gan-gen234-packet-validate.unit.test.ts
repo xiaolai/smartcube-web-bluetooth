@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { GanBitReader } from '../../gan-bit-reader';
 import {
-  GanBitReader,
   isValidGanGen2Packet,
   isValidGanGen3Packet,
   isValidGanGen4Packet,

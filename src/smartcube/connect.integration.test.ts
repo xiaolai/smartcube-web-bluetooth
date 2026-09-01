@@ -5,6 +5,7 @@ import { installMockBluetoothFromFixture } from '../test/bluetooth-mock';
 import { moveDirectionMismatches } from '../test/helpers/events';
 import { ganProtocol } from './protocols/gan';
 import { qiyiProtocol } from './protocols/qiyi';
+import { attachmentContextFor } from '../test/helpers/fixture-replay';
 
 function collectMoves(events: SmartCubeEvent[]): string[] {
   return events.filter((e) => e.type === 'MOVE').map((e) => (e as any).move as string);
@@ -110,13 +111,15 @@ describe('protocol.connect (capture replay)', () => {
     const conn = await ganProtocol.connect(
       device,
       async () => fixture.device.mac ?? null,
-      {
-        serviceUuids,
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      }
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids,
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
+      attachmentContextFor(serviceUuids)
     );
 
     const expectedMoves = fixture.events
@@ -166,13 +169,15 @@ describe('protocol.connect (capture replay)', () => {
     const conn = await qiyiProtocol.connect(
       device,
       async () => fixture.device.mac ?? null,
-      {
-        serviceUuids,
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      }
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids,
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
+      attachmentContextFor(serviceUuids)
     );
 
     const expectedMoves = fixture.events

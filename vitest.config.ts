@@ -13,6 +13,13 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/test/**', 'src/**/types.ts'],
       reporter: ['text', 'lcov'],
+      // Floor at the measured level; CI runs `test:coverage`, so coverage can only go up.
+      thresholds: {
+        statements: 91,
+        branches: 86,
+        functions: 95,
+        lines: 91,
+      },
     },
   },
 });

@@ -10,6 +10,9 @@ src/
     protocol.ts             SmartCubeProtocol interface + registry (drivers self-register on import)
     types.ts                public event/command/snapshot types
     event-bus.ts            per-connection bus: live events$ + revisioned state snapshot
+    gatt-connection.ts      base class for drivers that own a GATT session: bus facade,
+                            disconnect hook, one teardown/disconnect order, battery polling
+    gatt-uuids.ts           every non-GAN service/characteristic UUID (GAN's: gan-cube-definitions)
     cubie-cube.ts           cube math (corner/edge arrays <-> facelet strings, move tables)
     protocols/              one driver per brand (gan, giiker, gocube, moyu-mhc, moyu32, qiyi)
     attachment/             connect-time helpers: advertisements, MAC resolution, GATT snapshot,
