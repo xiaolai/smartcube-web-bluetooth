@@ -56,6 +56,18 @@ export const GAN_GEN4_COMMAND_CHARACTERISTIC = "0000fff5-0000-1000-8000-00805f9b
 /** GAN Gen4 protocol BLE state characteristic */
 export const GAN_GEN4_STATE_CHARACTERISTIC = "0000fff6-0000-1000-8000-00805f9b34fb";
 
+/** Advertised-name prefixes the picker matches: GAN cubes, Monster Go, and MoYu AI 2023 (which speaks gen2). */
+export const GAN_NAME_PREFIXES: readonly string[] = Object.freeze(['GAN', 'MG', 'AiCube']);
+
+/** Every service a GAN connection may open, across generations; the picker must be granted all of them. */
+export const GAN_OPTIONAL_SERVICES: readonly string[] = Object.freeze([
+    GAN_GEN1_PRIMARY_SERVICE,
+    GAN_GEN1_DEVICE_INFO_SERVICE,
+    GAN_GEN2_SERVICE,
+    GAN_GEN3_SERVICE,
+    GAN_GEN4_SERVICE,
+]);
+
 /** List of Company Identifier Codes, fill with all values [0x0001, 0xFF01] possible for GAN cubes */
 export const GAN_CIC_LIST: readonly number[] = Object.freeze(
     Array(256).fill(undefined).map((_v, i) => (i << 8) | 0x01));

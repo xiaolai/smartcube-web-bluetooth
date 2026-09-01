@@ -248,17 +248,21 @@ const GENERATION_PROTOCOLS = {
     gen4: GAN_GEN4_PROTOCOL,
 } as const;
 
-const GAN_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'GAN' }, { namePrefix: 'MG' }, { namePrefix: 'AiCube' }];
+const GAN_NAME_FILTERS: SmartCubeNameFilter[] = def.GAN_NAME_PREFIXES.map((namePrefix) => ({ namePrefix }));
+// SUPERSEDED: the prefixes live in gan-cube-definitions.ts, shared with the legacy connectGanCube.
+// const GAN_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'GAN' }, { namePrefix: 'MG' }, { namePrefix: 'AiCube' }];
 
 const ganProtocol: SmartCubeProtocol = {
     nameFilters: GAN_NAME_FILTERS,
-    optionalServices: [
-        def.GAN_GEN1_PRIMARY_SERVICE,
-        def.GAN_GEN1_DEVICE_INFO_SERVICE,
-        def.GAN_GEN2_SERVICE,
-        def.GAN_GEN3_SERVICE,
-        def.GAN_GEN4_SERVICE,
-    ],
+    optionalServices: [...def.GAN_OPTIONAL_SERVICES],
+    // SUPERSEDED: the list lives in gan-cube-definitions.ts, shared with the legacy connectGanCube.
+    // optionalServices: [
+    //     def.GAN_GEN1_PRIMARY_SERVICE,
+    //     def.GAN_GEN1_DEVICE_INFO_SERVICE,
+    //     def.GAN_GEN2_SERVICE,
+    //     def.GAN_GEN3_SERVICE,
+    //     def.GAN_GEN4_SERVICE,
+    // ],
     optionalManufacturerData: [...def.GAN_CIC_LIST],
     needsMac: true,
 

@@ -30,23 +30,27 @@ async function connectGanCube(
 ): Promise<GanCubeConnection> {
 
     // Request user for the bluetooth device (popup selection dialog)
-    const nameFilters: BluetoothLEScanFilter[] = [
-        { namePrefix: "GAN" },
-        { namePrefix: "MG" },
-        { namePrefix: "AiCube" },
-    ];
+    const nameFilters: BluetoothLEScanFilter[] = def.GAN_NAME_PREFIXES.map((namePrefix) => ({ namePrefix }));
+    // SUPERSEDED: the prefixes live in gan-cube-definitions.ts, shared with the SmartCube gan driver.
+    // const nameFilters: BluetoothLEScanFilter[] = [
+    //     { namePrefix: "GAN" },
+    //     { namePrefix: "MG" },
+    //     { namePrefix: "AiCube" },
+    // ];
     const cicFilters: BluetoothLEScanFilter[] = def.GAN_CIC_LIST.map((companyIdentifier) => ({
         manufacturerData: [{ companyIdentifier }],
     }));
-    const optionalServices = [
-        ...new Set([
-            def.GAN_GEN1_PRIMARY_SERVICE,
-            def.GAN_GEN1_DEVICE_INFO_SERVICE,
-            def.GAN_GEN2_SERVICE,
-            def.GAN_GEN3_SERVICE,
-            def.GAN_GEN4_SERVICE,
-        ]),
-    ];
+    const optionalServices = [...def.GAN_OPTIONAL_SERVICES];
+    // SUPERSEDED: the list lives in gan-cube-definitions.ts, shared with the SmartCube gan driver.
+    // const optionalServices = [
+    //     ...new Set([
+    //         def.GAN_GEN1_PRIMARY_SERVICE,
+    //         def.GAN_GEN1_DEVICE_INFO_SERVICE,
+    //         def.GAN_GEN2_SERVICE,
+    //         def.GAN_GEN3_SERVICE,
+    //         def.GAN_GEN4_SERVICE,
+    //     ]),
+    // ];
     const device: BluetoothDeviceWithMAC = await resolveBluetooth(options?.bluetooth).requestDevice(
         {
             filters: [...nameFilters, ...cicFilters],
