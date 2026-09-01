@@ -1,19 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture, type FixtureSession } from '../fixtures';
 import { installMockBluetoothFromFixture } from '../bluetooth-mock';
-import { serviceUuidsFromFixture } from '../helpers/fixture-replay';
+import { attachmentContextFor, serviceUuidsFromFixture } from '../helpers/fixture-replay';
 import { collectEvents, fixtureExpectedMoves, moves } from '../helpers/events';
 import { giikerProtocol } from '../../smartcube/protocols/giiker';
 import { qiyiProtocol } from '../../smartcube/protocols/qiyi';
 
 function ctx(fixture: FixtureSession) {
-  return {
-    serviceUuids: serviceUuidsFromFixture(fixture),
-    advertisementManufacturerData: null,
-    enableAddressSearch: false,
-    onStatus: undefined,
-    signal: undefined,
-  };
+  return attachmentContextFor(serviceUuidsFromFixture(fixture));
+  // SUPERSEDED: attachmentContextFor() builds this literal.
+  // {
+  //   serviceUuids: serviceUuidsFromFixture(fixture),
+  //   advertisementManufacturerData: null,
+  //   enableAddressSearch: false,
+  //   onStatus: undefined,
+  //   signal: undefined,
+  // }
 }
 
 async function characteristic(device: BluetoothDevice, service: string, chr: string): Promise<BluetoothRemoteGATTCharacteristic> {

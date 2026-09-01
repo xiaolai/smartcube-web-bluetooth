@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { FixtureSession } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
 import { moyuMhcProtocol } from './moyu-mhc';
+import { attachmentContextFor } from '../../test/helpers/fixture-replay';
 
 function makeFixtureMhcTurnOnly(): FixtureSession {
   const service = '00001000-0000-1000-8000-00805f9b34fb';
@@ -34,13 +35,15 @@ describe('moyuMhcProtocol.connect (synthetic)', () => {
     const fixture = makeFixtureMhcTurnOnly();
     const { device, replayer } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc', maxAutoFlushNotifies: 0 });
 
-    const conn = await moyuMhcProtocol.connect(device, undefined, {
-      serviceUuids: new Set([fixture.traffic[0]!.service]),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await moyuMhcProtocol.connect(device, undefined, attachmentContextFor(new Set([fixture.traffic[0]!.service])));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: new Set([fixture.traffic[0]!.service]),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
 
     // Seed faceStatus so a -2 turn crosses the 5↔4 threshold and yields a MOVE.
     (conn as any).faceStatus[0] = 6;
@@ -62,13 +65,15 @@ describe('moyuMhcProtocol.connect gating', () => {
   it('reports facelets capability for turn-only devices (turn tracking emits FACELETS)', async () => {
     const fixture = makeFixtureMhcTurnOnly();
     const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc-caps', maxAutoFlushNotifies: 0 });
-    const conn = await moyuMhcProtocol.connect(device, undefined, {
-      serviceUuids: new Set([fixture.traffic[0]!.service]),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await moyuMhcProtocol.connect(device, undefined, attachmentContextFor(new Set([fixture.traffic[0]!.service])));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: new Set([fixture.traffic[0]!.service]),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
     expect(conn.capabilities.facelets).toBe(true);
     expect(conn.capabilities.battery).toBe(false);
     await conn.disconnect();
@@ -92,13 +97,15 @@ describe('moyuMhcProtocol.connect gating', () => {
     };
     const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'mhc-bare', maxAutoFlushNotifies: 0 });
     await expect(
-      moyuMhcProtocol.connect(device, undefined, {
-        serviceUuids: new Set([service]),
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      }),
+      moyuMhcProtocol.connect(device, undefined, attachmentContextFor(new Set([service]))),
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids: new Set([service]),
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
     ).rejects.toThrow(/no usable protocol path/);
   }, 10_000);
 });

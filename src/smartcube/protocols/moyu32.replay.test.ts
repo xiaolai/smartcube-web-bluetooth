@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
-import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
+import { attachmentContextFor, serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
 import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { moyu32Protocol } from './moyu32';
 
@@ -25,13 +25,15 @@ describe('moyu32Protocol.connect (MAC from advertisements)', () => {
       setTimeout(() => emit(new Map([[0x0504, new DataView(Uint8Array.from(wire).buffer)]])), 5);
     };
 
-    const conn = await moyu32Protocol.connect(device, undefined, {
-      serviceUuids: serviceUuidsFromFixture(fixture),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await moyu32Protocol.connect(device, undefined, attachmentContextFor(serviceUuidsFromFixture(fixture)));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: serviceUuidsFromFixture(fixture),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
     expect(conn.deviceMAC.toUpperCase()).toBe(mac.toUpperCase());
 
     const { events, unsubscribe } = collectEvents(conn);
@@ -47,13 +49,15 @@ describe('moyu32Protocol.connect (MAC validation)', () => {
     const fixture = await loadFixture(FIXTURES.moyu32_my33_noGyro);
     const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'moyu32_badmac', maxAutoFlushNotifies: 0 });
     await expect(
-      moyu32Protocol.connect(device, async () => 'not-a-mac', {
-        serviceUuids: serviceUuidsFromFixture(fixture),
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      })
+      moyu32Protocol.connect(device, async () => 'not-a-mac', attachmentContextFor(serviceUuidsFromFixture(fixture)))
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids: serviceUuidsFromFixture(fixture),
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
     ).rejects.toThrow(/Invalid MAC address/);
   });
 
@@ -63,14 +67,16 @@ describe('moyu32Protocol.connect (MAC validation)', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      moyu32Protocol.connect(device, undefined, {
-        serviceUuids: serviceUuidsFromFixture(fixture),
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: controller.signal,
-      })
+      moyu32Protocol.connect(device, undefined, attachmentContextFor(serviceUuidsFromFixture(fixture), { signal: controller.signal }))
     ).rejects.toMatchObject({ name: 'AbortError' });
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // moyu32Protocol.connect(device, undefined, {
+    //   serviceUuids: serviceUuidsFromFixture(fixture),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: controller.signal,
+    // })
   });
 });
 
@@ -85,13 +91,15 @@ describe('moyu32Protocol.connect (capture replay)', () => {
     const conn = await moyu32Protocol.connect(
       device,
       async () => fixture.device.mac ?? null,
-      {
-        serviceUuids: serviceUuidsFromFixture(fixture),
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      }
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids: serviceUuidsFromFixture(fixture),
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
+      attachmentContextFor(serviceUuidsFromFixture(fixture))
     );
 
     // gyro is detected lazily (first opcode-171 packet). For this fixture, it should never flip.
@@ -125,13 +133,15 @@ describe('moyu32Protocol.connect (capture replay)', () => {
     const conn = await moyu32Protocol.connect(
       device,
       async () => fixture.device.mac ?? null,
-      {
-        serviceUuids: serviceUuidsFromFixture(fixture),
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      }
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids: serviceUuidsFromFixture(fixture),
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
+      attachmentContextFor(serviceUuidsFromFixture(fixture))
     );
 
     const { events, unsubscribe } = collectEvents(conn);

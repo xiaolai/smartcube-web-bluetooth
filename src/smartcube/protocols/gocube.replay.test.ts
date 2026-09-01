@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { SmartCubeEvent } from '../types';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
-import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
+import { attachmentContextFor, serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
 import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { goCubeProtocol, parseGoCubeOrientationPayload } from './gocube';
 
@@ -28,13 +28,15 @@ describe('gocubeProtocol.connect (capture replay)', () => {
     // Allow enough immediate notifies for init (initial state) but keep most for post-connect subscription.
     const { device, replayer } = installMockBluetoothFromFixture(fixture, { deviceId: 'gocube', maxAutoFlushNotifies: 5 });
 
-    const conn = await goCubeProtocol.connect(device, undefined, {
-      serviceUuids: serviceUuidsFromFixture(fixture),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await goCubeProtocol.connect(device, undefined, attachmentContextFor(serviceUuidsFromFixture(fixture)));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: serviceUuidsFromFixture(fixture),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
 
     const { events, unsubscribe } = collectEvents(conn);
 
@@ -61,13 +63,15 @@ describe('gocubeProtocol.connect (capture replay)', () => {
     const fixture = await loadFixture(FIXTURES.rubiksConnected);
     const { device, replayer } = installMockBluetoothFromFixture(fixture, { deviceId: 'rubiks', maxAutoFlushNotifies: 1 });
 
-    const conn = await goCubeProtocol.connect(device, undefined, {
-      serviceUuids: serviceUuidsFromFixture(fixture),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await goCubeProtocol.connect(device, undefined, attachmentContextFor(serviceUuidsFromFixture(fixture)));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: serviceUuidsFromFixture(fixture),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
 
     const { events, unsubscribe } = collectEvents(conn);
 

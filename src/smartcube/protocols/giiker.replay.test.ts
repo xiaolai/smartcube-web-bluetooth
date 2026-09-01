@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture } from '../../test/fixtures';
 import { installMockBluetoothFromFixture } from '../../test/bluetooth-mock';
-import { serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
+import { attachmentContextFor, serviceUuidsFromFixture } from '../../test/helpers/fixture-replay';
 import { collectEvents, fixtureExpectedLastFacelets, fixtureExpectedMoves, lastFacelets, moveDirectionMismatches, moves } from '../../test/helpers/events';
 import { giikerProtocol } from './giiker';
 
@@ -14,13 +14,15 @@ describe('giikerProtocol.connect (capture replay)', () => {
     const conn = await giikerProtocol.connect(
       device,
       undefined,
-      {
-        serviceUuids: serviceUuidsFromFixture(fixture),
-        advertisementManufacturerData: null,
-        enableAddressSearch: false,
-        onStatus: undefined,
-        signal: undefined,
-      }
+      // SUPERSEDED: attachmentContextFor() builds this literal.
+      // {
+      //   serviceUuids: serviceUuidsFromFixture(fixture),
+      //   advertisementManufacturerData: null,
+      //   enableAddressSearch: false,
+      //   onStatus: undefined,
+      //   signal: undefined,
+      // }
+      attachmentContextFor(serviceUuidsFromFixture(fixture))
     );
 
     const { events, unsubscribe } = collectEvents(conn);

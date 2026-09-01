@@ -3,6 +3,7 @@ import aesjs from 'aes-js';
 import { deriveGen1Key } from '../../gan-gen1';
 import { ganProtocol } from '../../smartcube/protocols/gan';
 import type { SmartCubeSnapshot } from '../../smartcube/types';
+import { attachmentContextFor } from '../helpers/fixture-replay';
 
 /**
  * Synthetic GAN gen1 (356i v1) GATT: firmware/hardware reads drive key derivation, and the
@@ -94,13 +95,15 @@ function installGen1Device(): BluetoothDevice {
 describe('GAN gen1 through connect (synthetic GATT)', () => {
   it('captures the initial facelets and battery emitted during create() in the state snapshot', async () => {
     const device = installGen1Device();
-    const conn = await ganProtocol.connect(device, undefined, {
-      serviceUuids: new Set(),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await ganProtocol.connect(device, undefined, attachmentContextFor(new Set()));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: new Set(),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
 
     expect(conn.protocol.id).toBe('gan-gen1');
     const snap = conn.getSnapshot();

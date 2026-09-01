@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FIXTURES, loadFixture } from '../fixtures';
 import { installMockBluetoothFromFixture } from '../bluetooth-mock';
-import { serviceUuidsFromFixture } from '../helpers/fixture-replay';
+import { attachmentContextFor, serviceUuidsFromFixture } from '../helpers/fixture-replay';
 import { collectEvents } from '../helpers/events';
 import { ganProtocol } from '../../smartcube/protocols/gan';
 import type { SmartCubeFaceletsEvent, SmartCubeMoveEvent } from '../../smartcube/types';
@@ -23,13 +23,15 @@ describe('GAN move serials reach the public event stream', () => {
       maxAutoFlushNotifies: 0,
     });
 
-    const conn = await ganProtocol.connect(device, async () => fixture.device.mac ?? null, {
-      serviceUuids: serviceUuidsFromFixture(fixture),
-      advertisementManufacturerData: null,
-      enableAddressSearch: false,
-      onStatus: undefined,
-      signal: undefined,
-    });
+    const conn = await ganProtocol.connect(device, async () => fixture.device.mac ?? null, attachmentContextFor(serviceUuidsFromFixture(fixture)));
+    // SUPERSEDED: attachmentContextFor() builds this literal.
+    // {
+    //   serviceUuids: serviceUuidsFromFixture(fixture),
+    //   advertisementManufacturerData: null,
+    //   enableAddressSearch: false,
+    //   onStatus: undefined,
+    //   signal: undefined,
+    // }
 
     const { events, unsubscribe } = collectEvents(conn);
     await replayer.drainNotificationsAsync();
