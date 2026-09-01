@@ -2,10 +2,12 @@ import { findCharacteristic } from '../ble-utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
 import { createMoyu32SessionCrypto } from './moyu32-session-crypto';
 import { isValidMoYu32DecryptedPacket } from './packet-sanity';
+import { MOYU32_READ_CHARACTERISTIC, MOYU32_SERVICE, MOYU32_WRITE_CHARACTERISTIC } from '../gatt-uuids';
 
-const MOYU32_SVC = '0783b03e-7735-b5a0-1760-a305d2795cb0';
-const MOYU32_CHR_READ = '0783b03e-7735-b5a0-1760-a305d2795cb1';
-const MOYU32_CHR_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
+// SUPERSEDED: UUIDs come from smartcube/gatt-uuids.ts, the single source for every brand.
+// const MOYU32_SVC = '0783b03e-7735-b5a0-1760-a305d2795cb0';
+// const MOYU32_CHR_READ = '0783b03e-7735-b5a0-1760-a305d2795cb1';
+// const MOYU32_CHR_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
 
 /**
  * Returns true if notifications decrypt to plausible MoYu32 payloads for this MAC.
@@ -23,10 +25,10 @@ export async function probeMoyu32Mac(
     if (!gatt.connected) {
         await gatt.connect();
     }
-    const service = await gatt.getPrimaryService(MOYU32_SVC);
+    const service = await gatt.getPrimaryService(MOYU32_SERVICE);
     const chrcts = await service.getCharacteristics();
-    const readChrct = findCharacteristic(chrcts, MOYU32_CHR_READ);
-    const writeChrct = findCharacteristic(chrcts, MOYU32_CHR_WRITE);
+    const readChrct = findCharacteristic(chrcts, MOYU32_READ_CHARACTERISTIC);
+    const writeChrct = findCharacteristic(chrcts, MOYU32_WRITE_CHARACTERISTIC);
     if (!readChrct || !writeChrct) {
         return false;
     }
