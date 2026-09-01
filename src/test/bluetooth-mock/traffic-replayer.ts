@@ -14,7 +14,7 @@ export class TrafficReplayer {
   private readonly pendingNotifies = new Map<Key, DataView[]>();
   private readonly maxAutoFlushNotifies: number;
 
-  constructor(private readonly fixture: FixtureSession, opts?: { maxAutoFlushNotifies?: number }) {
+  constructor(fixture: FixtureSession, opts?: { maxAutoFlushNotifies?: number }) {
     this.traffic = fixture.traffic;
     this.maxAutoFlushNotifies = opts?.maxAutoFlushNotifies ?? 200;
   }

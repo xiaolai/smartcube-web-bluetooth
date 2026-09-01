@@ -68,8 +68,8 @@ function requestFreshStateForMacVerify(conn: SmartCubeConnection, onError: (e: u
 function waitForVerifiedCubeEvent(
     conn: SmartCubeConnection,
     timeoutMs: number,
-    signal?: AbortSignal,
-    proof: (e: SmartCubeEvent) => boolean = isMacCacheProofEvent
+    proof: (e: SmartCubeEvent) => boolean,
+    signal?: AbortSignal
 ): Promise<void> {
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -250,8 +250,8 @@ export async function connectSmartCube(
             const verifyPromise = waitForVerifiedCubeEvent(
                 conn,
                 MAC_VERIFY_TIMEOUT_MS,
-                opts.signal,
-                macProofPredicate(conn)
+                macProofPredicate(conn),
+                opts.signal
             );
             requestFreshStateForMacVerify(conn, (e) => {
                 commandError = e;

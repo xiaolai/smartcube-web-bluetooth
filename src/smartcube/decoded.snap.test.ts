@@ -16,7 +16,9 @@ function lastFacelets(events: SmartCubeEvent[]): string | null {
   return null;
 }
 
-describe('decoded cube states (snapshots)', () => {
+// SUPERSEDED: fixture-events.snap.test.ts pins the same ganGen2_small moves and final facelets
+// (verified identical) plus every other decoded field. Kept skipped for review; delete with its .snap.
+describe.skip('decoded cube states (snapshots)', () => {
   it('matches snapshot for GAN gen2 decoded moves and final facelets', async () => {
     const fixture = await loadFixture(FIXTURES.ganGen2_small);
     const { device, replayer } = installMockBluetoothFromFixture(fixture, { deviceId: 'gan-snap' });

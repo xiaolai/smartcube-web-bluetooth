@@ -344,10 +344,7 @@ export class MoyuV1Client {
         return moyuV1ParseCubeStatePayload(r.value);
     }
 
-    async setCubeState(
-        stickers: readonly (readonly number[])[] = MOYU_V1_SOLVED_STICKERS,
-        angles: readonly number[] = [0, 0, 0, 0, 0, 0],
-    ): Promise<void> {
+    async setCubeState(stickers: readonly (readonly number[])[], angles: readonly number[]): Promise<void> {
         const pl = moyuV1EncodeCubeStatePayload(stickers, angles);
         await this.send(MOYU_V1_CMD_CUBE_STATE, pl);
     }
