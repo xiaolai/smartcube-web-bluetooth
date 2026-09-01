@@ -100,61 +100,64 @@ describe('connectSmartCube (error paths)', () => {
     }
   });
 
-  it('throws AbortError when signal is aborted during verification', async () => {
-    vi.useFakeTimers();
-    const prev = clearProtocolRegistry();
-    try {
-      const fixture = await loadFixture(FIXTURES.ganGen2_small);
-      const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'abort-test' });
-      const disconnectSpy = vi.spyOn(device.gatt!, 'disconnect');
-      const removeCachedMacSpy = vi.spyOn(addressHints, 'removeCachedMacForDevice');
-      const setCachedMacSpy = vi.spyOn(addressHints, 'setCachedMacForDevice');
-
-      const controller = new AbortController();
-
-      const dummy: SmartCubeProtocol = {
-        nameFilters: [{ namePrefix: 'GAN' }],
-        optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dc4179'],
-        matchesDevice: () => true,
-        gattAffinity: () => 999,
-        connect: async () => {
-          const events$ = new Subject<SmartCubeEvent>();
-          return {
-            deviceName: 'Dummy',
-            deviceMAC: 'AA:BB:CC:DD:EE:FF',
-            protocol: { id: 'dummy', name: 'Dummy' },
-            capabilities: { gyroscope: false, battery: false, facelets: true, hardware: false, reset: false },
-            events$,
-            state$: new Subject<SmartCubeSnapshot>(),
-            getSnapshot: () => ({ revision: 0, connected: true, facelets: null, battery: null, hardware: null, capabilities: { gyroscope: false, battery: false, facelets: true, hardware: false, reset: false } }),
-            sendCommand: async () => {},
-            disconnect: async () => {
-              events$.complete();
-            },
-          };
-        },
-      };
-      registerProtocol(dummy);
-
-      const p = connectSmartCube({
-        deviceSelection: 'any',
-        enableAddressSearch: false,
-        signal: controller.signal,
-      });
-
-      const expectation = expect(p).rejects.toMatchObject({ name: 'AbortError' });
-      controller.abort();
-      await vi.runAllTimersAsync();
-
-      await expectation;
-
-      expect(removeCachedMacSpy).not.toHaveBeenCalled();
-      expect(setCachedMacSpy).not.toHaveBeenCalled();
-      expect(disconnectSpy).toHaveBeenCalled();
-    } finally {
-      restoreProtocolRegistry(prev);
-      vi.useRealTimers();
-    }
-  });
+  // SUPERSEDED: this aborted synchronously before GATT connect, so it never reached verification
+  // and passed for the wrong reason. The real case lives in connect.verify.test.ts
+  // ('aborted during verification'); the pre-connect abort is in connect.behaviour.test.ts.
+  // it('throws AbortError when signal is aborted during verification', async () => {
+  //   vi.useFakeTimers();
+  //   const prev = clearProtocolRegistry();
+  //   try {
+  //     const fixture = await loadFixture(FIXTURES.ganGen2_small);
+  //     const { device } = installMockBluetoothFromFixture(fixture, { deviceId: 'abort-test' });
+  //     const disconnectSpy = vi.spyOn(device.gatt!, 'disconnect');
+  //     const removeCachedMacSpy = vi.spyOn(addressHints, 'removeCachedMacForDevice');
+  //     const setCachedMacSpy = vi.spyOn(addressHints, 'setCachedMacForDevice');
+  //
+  //     const controller = new AbortController();
+  //
+  //     const dummy: SmartCubeProtocol = {
+  //       nameFilters: [{ namePrefix: 'GAN' }],
+  //       optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dc4179'],
+  //       matchesDevice: () => true,
+  //       gattAffinity: () => 999,
+  //       connect: async () => {
+  //         const events$ = new Subject<SmartCubeEvent>();
+  //         return {
+  //           deviceName: 'Dummy',
+  //           deviceMAC: 'AA:BB:CC:DD:EE:FF',
+  //           protocol: { id: 'dummy', name: 'Dummy' },
+  //           capabilities: { gyroscope: false, battery: false, facelets: true, hardware: false, reset: false },
+  //           events$,
+  //           state$: new Subject<SmartCubeSnapshot>(),
+  //           getSnapshot: () => ({ revision: 0, connected: true, facelets: null, battery: null, hardware: null, capabilities: { gyroscope: false, battery: false, facelets: true, hardware: false, reset: false } }),
+  //           sendCommand: async () => {},
+  //           disconnect: async () => {
+  //             events$.complete();
+  //           },
+  //         };
+  //       },
+  //     };
+  //     registerProtocol(dummy);
+  //
+  //     const p = connectSmartCube({
+  //       deviceSelection: 'any',
+  //       enableAddressSearch: false,
+  //       signal: controller.signal,
+  //     });
+  //
+  //     const expectation = expect(p).rejects.toMatchObject({ name: 'AbortError' });
+  //     controller.abort();
+  //     await vi.runAllTimersAsync();
+  //
+  //     await expectation;
+  //
+  //     expect(removeCachedMacSpy).not.toHaveBeenCalled();
+  //     expect(setCachedMacSpy).not.toHaveBeenCalled();
+  //     expect(disconnectSpy).toHaveBeenCalled();
+  //   } finally {
+  //     restoreProtocolRegistry(prev);
+  //     vi.useRealTimers();
+  //   }
+  // });
 });
 
