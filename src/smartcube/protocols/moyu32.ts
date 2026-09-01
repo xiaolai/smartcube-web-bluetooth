@@ -1,7 +1,6 @@
 
-import { Observable } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
-import { SmartCubeEventBus } from '../event-bus';
+import { SmartCubeConnection, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { GattSmartCubeConnection } from '../gatt-connection';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { resolveCubeMac } from '../attachment/resolve-mac';
@@ -12,12 +11,15 @@ import { buildMoyu32MacCandidatesFromName } from '../attachment/mac-candidates';
 import { probeMoyu32Mac } from '../attachment/mac-probe-moyu32';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, moveDirectionFromNotation } from '../cubie-cube';
-import { now, findCharacteristic } from '../ble-utils';
+import { findCharacteristic } from '../ble-utils';
+import { now } from '../../utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
+import { MOYU32_READ_CHARACTERISTIC, MOYU32_SERVICE, MOYU32_WRITE_CHARACTERISTIC } from '../gatt-uuids';
 
-const SERVICE_UUID = '0783b03e-7735-b5a0-1760-a305d2795cb0';
-const CHRT_UUID_READ = '0783b03e-7735-b5a0-1760-a305d2795cb1';
-const CHRT_UUID_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
+// SUPERSEDED: UUIDs come from smartcube/gatt-uuids.ts, the single source for every brand.
+// const SERVICE_UUID = '0783b03e-7735-b5a0-1760-a305d2795cb0';
+// const CHRT_UUID_READ = '0783b03e-7735-b5a0-1760-a305d2795cb1';
+// const CHRT_UUID_WRITE = '0783b03e-7735-b5a0-1760-a305d2795cb2';
 
 /** Opcode 172 + payload to enable gyro notifications (MoYu WCU). */
 const ENABLE_GYRO_PAYLOAD = Object.freeze([
@@ -75,21 +77,15 @@ function parseMoyu32MacFromMf(mfData: BluetoothManufacturerData | DataView | nul
 
 const MOYU32_PROTOCOL: SmartCubeProtocolInfo = { id: 'moyu32', name: 'MoYu32' };
 
-class Moyu32Connection implements SmartCubeConnection {
-    readonly deviceName: string;
-    readonly deviceMAC: string;
-    readonly protocol: SmartCubeProtocolInfo = MOYU32_PROTOCOL;
-    private readonly bus = new SmartCubeEventBus({
-        gyroscope: false,
-        battery: true,
-        facelets: true,
-        hardware: true,
-        reset: false
-    });
-    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
-    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
+const MOYU32_CAPABILITIES: SmartCubeCapabilities = {
+    gyroscope: false,
+    battery: true,
+    facelets: true,
+    hardware: true,
+    reset: false
+};
 
-    private device: BluetoothDevice;
+class Moyu32Connection extends GattSmartCubeConnection {
     private readChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private writeChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private encrypter: Moyu32SessionCrypto | null = null;
@@ -98,22 +94,31 @@ class Moyu32Connection implements SmartCubeConnection {
     private deviceTime = 0;
     private deviceTimeOffset = 0;
     private prevMoveCnt = -1;
-    private batteryInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(device: BluetoothDevice, mac: string) {
-        this.device = device;
-        this.deviceName = device.name || 'WCU_MY3';
-        this.deviceMAC = mac;
+        super(device, MOYU32_PROTOCOL, device.name || 'WCU_MY3', mac, MOYU32_CAPABILITIES);
     }
 
-    get capabilities(): SmartCubeCapabilities {
-        return this.bus.capabilities as SmartCubeCapabilities;
-    }
-
-    getSnapshot(): SmartCubeSnapshot {
-        return this.bus.getSnapshot();
-    }
-
+    // SUPERSEDED: the bus facade, device and lifecycle live in GattSmartCubeConnection.
+    // readonly deviceName: string;
+    // readonly deviceMAC: string;
+    // readonly protocol: SmartCubeProtocolInfo = MOYU32_PROTOCOL;
+    // private readonly bus = new SmartCubeEventBus({ ...MOYU32_CAPABILITIES });
+    // readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    // readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
+    // private device: BluetoothDevice;
+    // private batteryInterval: ReturnType<typeof setInterval> | null = null;
+    // constructor(device: BluetoothDevice, mac: string) {
+    //     this.device = device;
+    //     this.deviceName = device.name || 'WCU_MY3';
+    //     this.deviceMAC = mac;
+    // }
+    // get capabilities(): SmartCubeCapabilities {
+    //     return this.bus.capabilities as SmartCubeCapabilities;
+    // }
+    // getSnapshot(): SmartCubeSnapshot {
+    //     return this.bus.getSnapshot();
+    // }
 
     private sendRequest(req: number[]): Promise<void> {
         if (!this.writeChrct) {
@@ -307,28 +312,37 @@ class Moyu32Connection implements SmartCubeConnection {
         });
     }
 
-    /** Idempotent teardown shared by remote and explicit disconnects. */
-    private teardown(): void {
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+    protected override releaseResources(): void {
         if (this.readChrct) {
             this.readChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
             this.readChrct = null;
         }
         this.writeChrct = null;
         this.encrypter = null;
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
-        }
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
     }
 
-    private onDisconnect = (): void => {
-        this.teardown();
-    };
-
+    // SUPERSEDED: GattSmartCubeConnection.teardown() runs releaseResources() at the same point in the same order.
+    // /** Idempotent teardown shared by remote and explicit disconnects. */
+    // private teardown(): void {
+    //     this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+    //     if (this.readChrct) {
+    //         this.readChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
+    //         this.readChrct = null;
+    //     }
+    //     this.writeChrct = null;
+    //     this.encrypter = null;
+    //     this.bus.resetBatteryDedupe();
+    //     if (this.batteryInterval) {
+    //         clearInterval(this.batteryInterval);
+    //         this.batteryInterval = null;
+    //     }
+    //     this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+    //     this.bus.complete();
+    // }
+    //
+    // private onDisconnect = (): void => {
+    //     this.teardown();
+    // };
     /** Hardware, facelets, and battery requests in the order the cube expects. */
     private async sendInitBurst(): Promise<void> {
         await this.sendSimpleRequest(OP_HARDWARE_INFO);
@@ -337,13 +351,12 @@ class Moyu32Connection implements SmartCubeConnection {
     }
 
     async init(): Promise<void> {
-        this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
-        try {
+        await this.initialize(async () => {
             const gatt = await this.device.gatt!.connect();
-            const service = await gatt.getPrimaryService(SERVICE_UUID);
+            const service = await gatt.getPrimaryService(MOYU32_SERVICE);
             const chrcts = await service.getCharacteristics();
-            this.readChrct = findCharacteristic(chrcts, CHRT_UUID_READ);
-            this.writeChrct = findCharacteristic(chrcts, CHRT_UUID_WRITE);
+            this.readChrct = findCharacteristic(chrcts, MOYU32_READ_CHARACTERISTIC);
+            this.writeChrct = findCharacteristic(chrcts, MOYU32_WRITE_CHARACTERISTIC);
 
             if (!this.readChrct || !this.writeChrct) {
                 throw new Error('[Moyu32] Cannot find read/write characteristics');
@@ -361,19 +374,23 @@ class Moyu32Connection implements SmartCubeConnection {
             // gyro enable + steady-state status updates begin.
             await this.sendInitBurst();
 
-            this.batteryInterval = setInterval(this.pollBattery, 60_000);
+            this.startBatteryPolling(this.pollBattery);
             await this.sendRequest(Array.from(ENABLE_GYRO_PAYLOAD));
             await this.sendSimpleRequest(OP_FACELETS); // Refresh cube status after enabling gyro notifications
-        } catch (e) {
-            this.teardown();
-            if (this.device.gatt?.connected) {
-                this.device.gatt.disconnect();
-            }
-            throw e;
-        }
+        });
+        // SUPERSEDED: GattSmartCubeConnection.initialize() owns the disconnect hook and the failure path.
+        // this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
+        // try {
+        // } catch (e) {
+        //     this.teardown();
+        //     if (this.device.gatt?.connected) {
+        //         this.device.gatt.disconnect();
+        //     }
+        //     throw e;
+        // }
     }
 
-    async sendCommand(command: SmartCubeCommand): Promise<void> {
+    override async sendCommand(command: SmartCubeCommand): Promise<void> {
         switch (command.type) {
             case "REQUEST_HARDWARE":
                 await this.sendSimpleRequest(OP_HARDWARE_INFO);
@@ -393,16 +410,21 @@ class Moyu32Connection implements SmartCubeConnection {
         }
     }
 
-    async disconnect(): Promise<void> {
-        const readChrct = this.readChrct;
-        this.teardown();
-        if (readChrct) {
-            await readChrct.stopNotifications().catch(() => {});
-        }
-        if (this.device.gatt?.connected) {
-            this.device.gatt.disconnect();
-        }
+    protected override notifyingCharacteristics(): (BluetoothRemoteGATTCharacteristic | null)[] {
+        return [this.readChrct];
     }
+
+    // SUPERSEDED: GattSmartCubeConnection.disconnect() stops notifyingCharacteristics() and drops the GATT link.
+    // async disconnect(): Promise<void> {
+    //     const readChrct = this.readChrct;
+    //     this.teardown();
+    //     if (readChrct) {
+    //         await readChrct.stopNotifications().catch(() => {});
+    //     }
+    //     if (this.device.gatt?.connected) {
+    //         this.device.gatt.disconnect();
+    //     }
+    // }
 }
 
 async function connectMoyu32Device(
@@ -435,13 +457,13 @@ const MOYU32_NAME_FILTERS: SmartCubeNameFilter[] = [{ namePrefix: 'WCU_' }];
 
 const moyu32Protocol: SmartCubeProtocol = {
     nameFilters: MOYU32_NAME_FILTERS,
-    optionalServices: [SERVICE_UUID],
+    optionalServices: [MOYU32_SERVICE],
     needsMac: true,
 
     matchesDevice: deviceNameMatchesFilters(MOYU32_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
-        return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;
+        return serviceUuids.has(normalizeUuid(MOYU32_SERVICE)) ? 110 : 0;
     },
 
     connect: connectMoyu32Device

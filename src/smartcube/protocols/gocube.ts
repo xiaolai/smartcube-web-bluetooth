@@ -1,19 +1,20 @@
 
-import { Observable } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
-import { SmartCubeEventBus } from '../event-bus';
+import { SmartCubeConnection, SmartCubeCommand, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { GattSmartCubeConnection } from '../gatt-connection';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { abortError, throwIfAborted } from '../attachment/abort';
 import { CubieCube, SOLVED_FACELET } from '../cubie-cube';
-import { now } from '../ble-utils';
+import { now } from '../../utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
+import { GOCUBE_UART_READ_CHARACTERISTIC, GOCUBE_UART_SERVICE, GOCUBE_UART_WRITE_CHARACTERISTIC } from '../gatt-uuids';
 
-const UUID_SUFFIX = '-b5a3-f393-e0a9-e50e24dcca9e';
-const SERVICE_UUID = '6e400001' + UUID_SUFFIX;
-const CHRCT_UUID_WRITE = '6e400002' + UUID_SUFFIX;
-const CHRCT_UUID_READ = '6e400003' + UUID_SUFFIX;
+// SUPERSEDED: UUIDs come from smartcube/gatt-uuids.ts, the single source for every brand.
+// const UUID_SUFFIX = '-b5a3-f393-e0a9-e50e24dcca9e';
+// const SERVICE_UUID = '6e400001' + UUID_SUFFIX;
+// const CHRCT_UUID_WRITE = '6e400002' + UUID_SUFFIX;
+// const CHRCT_UUID_READ = '6e400003' + UUID_SUFFIX;
 
 const WRITE_BATTERY = 50;
 const WRITE_STATE = 51;
@@ -84,21 +85,12 @@ const OPPOSITE_AXIS = [3, 4, 5, 0, 1, 2];
 
 const GOCUBE_PROTOCOL: SmartCubeProtocolInfo = { id: 'gocube', name: 'GoCube' };
 
-class GoCubeConnection implements SmartCubeConnection {
-    readonly deviceName: string;
-    readonly deviceMAC: string;
-    readonly protocol: SmartCubeProtocolInfo = GOCUBE_PROTOCOL;
-    private readonly bus: SmartCubeEventBus;
-    readonly events$: Observable<SmartCubeEvent>;
-    readonly state$: Observable<SmartCubeSnapshot>;
-
-    private device: BluetoothDevice;
+class GoCubeConnection extends GattSmartCubeConnection {
     private readChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private writeChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private curCubie = new CubieCube();
     private prevCubie = new CubieCube();
     private moveCntFree = 100;
-    private batteryInterval: ReturnType<typeof setInterval> | null = null;
     /** Last decoded move (axis + direction bit) for short type-1 frames that omit a full pair of bytes. */
     private lastMoveMeta: { axis: number; dirBit: number } | null = null;
     /** First full-state (type 2) after connect resolves the init wait; the bus snapshot preserves it for late subscribers. */
@@ -107,28 +99,38 @@ class GoCubeConnection implements SmartCubeConnection {
     private rejectInitialState: ((e: Error) => void) | undefined;
 
     constructor(device: BluetoothDevice, name: string, gyroSupported: boolean) {
-        this.device = device;
-        this.deviceName = name;
-        this.deviceMAC = '';
-        this.bus = new SmartCubeEventBus({
+        super(device, GOCUBE_PROTOCOL, name, '', {
             gyroscope: gyroSupported,
             battery: true,
             facelets: true,
             hardware: true,
             reset: true
         });
-        this.events$ = this.bus.events$;
-        this.state$ = this.bus.state$;
     }
 
-    get capabilities(): SmartCubeCapabilities {
-        return this.bus.capabilities as SmartCubeCapabilities;
-    }
-
-    getSnapshot(): SmartCubeSnapshot {
-        return this.bus.getSnapshot();
-    }
-
+    // SUPERSEDED: the bus facade, device and lifecycle live in GattSmartCubeConnection.
+    // readonly deviceName: string;
+    // readonly deviceMAC: string;
+    // readonly protocol: SmartCubeProtocolInfo = GOCUBE_PROTOCOL;
+    // private readonly bus: SmartCubeEventBus;
+    // readonly events$: Observable<SmartCubeEvent>;
+    // readonly state$: Observable<SmartCubeSnapshot>;
+    // private device: BluetoothDevice;
+    // private batteryInterval: ReturnType<typeof setInterval> | null = null;
+    // constructor(device: BluetoothDevice, name: string, gyroSupported: boolean) {
+    //     this.device = device;
+    //     this.deviceName = name;
+    //     this.deviceMAC = '';
+    //     this.bus = new SmartCubeEventBus({ gyroscope: gyroSupported, battery: true, facelets: true, hardware: true, reset: true });
+    //     this.events$ = this.bus.events$;
+    //     this.state$ = this.bus.state$;
+    // }
+    // get capabilities(): SmartCubeCapabilities {
+    //     return this.bus.capabilities as SmartCubeCapabilities;
+    // }
+    // getSnapshot(): SmartCubeSnapshot {
+    //     return this.bus.getSnapshot();
+    // }
 
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
@@ -298,47 +300,62 @@ class GoCubeConnection implements SmartCubeConnection {
         }
     }
 
-    private emitHardwareEvent(): void {
-        this.bus.emit({
-            timestamp: now(),
-            type: "HARDWARE",
-            hardwareName: this.deviceName,
-            gyroSupported: this.capabilities.gyroscope
-        });
-    }
-
-    /** Idempotent teardown shared by remote and explicit disconnects. */
-    private teardown(): void {
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+    // SUPERSEDED: GattSmartCubeConnection.emitHardwareEventFromName().
+    // private emitHardwareEvent(): void {
+    //     this.bus.emit({
+    //         timestamp: now(),
+    //         type: "HARDWARE",
+    //         hardwareName: this.deviceName,
+    //         gyroSupported: this.capabilities.gyroscope
+    //     });
+    // }
+    protected override releaseResources(): void {
         if (this.readChrct) {
             this.readChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
             this.readChrct = null;
         }
         this.writeChrct = null;
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
-        }
         const rejectInit = this.rejectInitialState;
         this.rejectInitialState = undefined;
         this.resolveInitialState = undefined;
         this.awaitingInitialState = false;
         rejectInit?.(new Error('GoCube disconnected during initialization'));
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
     }
 
-    private onDisconnect = (): void => {
-        this.teardown();
-    };
-
+    // SUPERSEDED: GattSmartCubeConnection.teardown() runs releaseResources() at the same point in the same order. Rejecting the init promise before the DISCONNECT emit is preserved; its handlers run on a later microtask either way.
+    // /** Idempotent teardown shared by remote and explicit disconnects. */
+    // private teardown(): void {
+    //     this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+    //     if (this.readChrct) {
+    //         this.readChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
+    //         this.readChrct = null;
+    //     }
+    //     this.writeChrct = null;
+    //     this.bus.resetBatteryDedupe();
+    //     if (this.batteryInterval) {
+    //         clearInterval(this.batteryInterval);
+    //         this.batteryInterval = null;
+    //     }
+    //     const rejectInit = this.rejectInitialState;
+    //     this.rejectInitialState = undefined;
+    //     this.resolveInitialState = undefined;
+    //     this.awaitingInitialState = false;
+    //     rejectInit?.(new Error('GoCube disconnected during initialization'));
+    //     this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+    //     this.bus.complete();
+    // }
+    //
+    // private onDisconnect = (): void => {
+    //     this.teardown();
+    // };
     async init(): Promise<void> {
-        this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
+        // Failure handling stays in connect(): it disconnects through the full path so a
+        // half-started notification stream is stopped, not just dropped.
+        this.watchDisconnect();
         const gatt = await this.device.gatt!.connect();
-        const service = await gatt.getPrimaryService(SERVICE_UUID);
-        this.writeChrct = await service.getCharacteristic(CHRCT_UUID_WRITE);
-        this.readChrct = await service.getCharacteristic(CHRCT_UUID_READ);
+        const service = await gatt.getPrimaryService(GOCUBE_UART_SERVICE);
+        this.writeChrct = await service.getCharacteristic(GOCUBE_UART_WRITE_CHARACTERISTIC);
+        this.readChrct = await service.getCharacteristic(GOCUBE_UART_READ_CHARACTERISTIC);
         await this.readChrct.startNotifications();
         this.readChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
 
@@ -354,7 +371,7 @@ class GoCubeConnection implements SmartCubeConnection {
 
         await writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_STATE]).buffer);
         this.pollBattery();
-        this.batteryInterval = setInterval(this.pollBattery, 60_000);
+        this.startBatteryPolling(this.pollBattery);
 
         let initialStateTimer: ReturnType<typeof setTimeout> | undefined;
         let timedOut = false;
@@ -390,7 +407,7 @@ class GoCubeConnection implements SmartCubeConnection {
         });
     }
 
-    async sendCommand(command: SmartCubeCommand): Promise<void> {
+    override async sendCommand(command: SmartCubeCommand): Promise<void> {
         if (!this.writeChrct) {
             return;
         }
@@ -408,7 +425,7 @@ class GoCubeConnection implements SmartCubeConnection {
             });
             await writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_STATE]).buffer);
         } else if (command.type === "REQUEST_HARDWARE") {
-            this.emitHardwareEvent();
+            this.emitHardwareEventFromName();
         } else if (command.type === "REQUEST_RESET") {
             await writeGattCharacteristicValue(this.writeChrct, new Uint8Array([WRITE_RESET]).buffer);
             this.curCubie = new CubieCube();
@@ -424,16 +441,21 @@ class GoCubeConnection implements SmartCubeConnection {
         }
     }
 
-    async disconnect(): Promise<void> {
-        const readChrct = this.readChrct;
-        this.teardown();
-        if (readChrct) {
-            await readChrct.stopNotifications().catch(() => {});
-        }
-        if (this.device.gatt?.connected) {
-            this.device.gatt.disconnect();
-        }
+    protected override notifyingCharacteristics(): (BluetoothRemoteGATTCharacteristic | null)[] {
+        return [this.readChrct];
     }
+
+    // SUPERSEDED: GattSmartCubeConnection.disconnect() stops notifyingCharacteristics() and drops the GATT link.
+    // async disconnect(): Promise<void> {
+    //     const readChrct = this.readChrct;
+    //     this.teardown();
+    //     if (readChrct) {
+    //         await readChrct.stopNotifications().catch(() => {});
+    //     }
+    //     if (this.device.gatt?.connected) {
+    //         this.device.gatt.disconnect();
+    //     }
+    // }
 }
 
 const GOCUBE_NAME_FILTERS: SmartCubeNameFilter[] = [
@@ -443,12 +465,12 @@ const GOCUBE_NAME_FILTERS: SmartCubeNameFilter[] = [
 
 const goCubeProtocol: SmartCubeProtocol = {
     nameFilters: GOCUBE_NAME_FILTERS,
-    optionalServices: [SERVICE_UUID],
+    optionalServices: [GOCUBE_UART_SERVICE],
 
     matchesDevice: deviceNameMatchesFilters(GOCUBE_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
-        return serviceUuids.has(normalizeUuid(SERVICE_UUID)) ? 110 : 0;
+        return serviceUuids.has(normalizeUuid(GOCUBE_UART_SERVICE)) ? 110 : 0;
     },
 
     async connect(

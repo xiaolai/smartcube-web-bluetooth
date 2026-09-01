@@ -1,20 +1,28 @@
 
-import { Observable } from 'rxjs';
-import { SmartCubeConnection, SmartCubeEvent, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, SmartCubeSnapshot, MacAddressProvider } from '../types';
-import { SmartCubeEventBus } from '../event-bus';
+import { SmartCubeConnection, SmartCubeCommand, SmartCubeCapabilities, SmartCubeProtocolInfo, MacAddressProvider } from '../types';
+import { GattSmartCubeConnection } from '../gatt-connection';
 import type { AttachmentContext } from '../attachment/types';
 import { normalizeUuid } from '../attachment/normalize-uuid';
 import { SmartCubeProtocol, SmartCubeNameFilter, deviceNameMatchesFilters, registerProtocol } from '../protocol';
 import { CubieCube, moveDirectionFromNotation } from '../cubie-cube';
-import { now, findCharacteristic } from '../ble-utils';
+import { findCharacteristic } from '../ble-utils';
+import { now } from '../../utils';
 import { writeGattCharacteristicValue } from '../../gatt-characteristic-write';
+import {
+    GIIKER_CONTROL_READ_CHARACTERISTIC,
+    GIIKER_CONTROL_SERVICE,
+    GIIKER_CONTROL_WRITE_CHARACTERISTIC,
+    GIIKER_DATA_CHARACTERISTIC,
+    GIIKER_DATA_SERVICE,
+} from '../gatt-uuids';
 
-const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
-const SERVICE_UUID_DATA = '0000aadb' + UUID_SUFFIX;
-const CHRCT_UUID_DATA = '0000aadc' + UUID_SUFFIX;
-const SERVICE_UUID_RW = '0000aaaa' + UUID_SUFFIX;
-const CHRCT_UUID_READ = '0000aaab' + UUID_SUFFIX;
-const CHRCT_UUID_WRITE = '0000aaac' + UUID_SUFFIX;
+// SUPERSEDED: UUIDs come from smartcube/gatt-uuids.ts, the single source for every brand.
+// const UUID_SUFFIX = '-0000-1000-8000-00805f9b34fb';
+// const SERVICE_UUID_DATA = '0000aadb' + UUID_SUFFIX;
+// const CHRCT_UUID_DATA = '0000aadc' + UUID_SUFFIX;
+// const SERVICE_UUID_RW = '0000aaaa' + UUID_SUFFIX;
+// const CHRCT_UUID_READ = '0000aaab' + UUID_SUFFIX;
+// const CHRCT_UUID_WRITE = '0000aaac' + UUID_SUFFIX;
 
 /** Every Giiker state notification/read is a 20-byte frame (18 data bytes + encryption marker/key nibbles). */
 const GIIKER_STATE_LENGTH = 20;
@@ -122,22 +130,16 @@ function parseState(value: DataView): { facelet: string; prevMoves: string[] } |
 
 const GIIKER_PROTOCOL: SmartCubeProtocolInfo = { id: 'giiker', name: 'Giiker' };
 
-class GiikerConnection implements SmartCubeConnection {
-    readonly deviceName: string;
-    readonly deviceMAC: string;
-    readonly protocol: SmartCubeProtocolInfo = GIIKER_PROTOCOL;
-    private readonly bus = new SmartCubeEventBus({
-        gyroscope: false,
-        // battery and reset are enabled only once the optional control service is up.
-        battery: false,
-        facelets: true,
-        hardware: true,
-        reset: false
-    });
-    readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
-    readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
+const GIIKER_CAPABILITIES: SmartCubeCapabilities = {
+    gyroscope: false,
+    // battery and reset are enabled only once the optional control service is up.
+    battery: false,
+    facelets: true,
+    hardware: true,
+    reset: false
+};
 
-    private device: BluetoothDevice;
+class GiikerConnection extends GattSmartCubeConnection {
     private gatt: BluetoothRemoteGATTServer | null = null;
     private dataChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private lastFacelet: string = '';
@@ -146,24 +148,33 @@ class GiikerConnection implements SmartCubeConnection {
     private closed = false;
     private rwReadChrct: BluetoothRemoteGATTCharacteristic | null = null;
     private rwWriteChrct: BluetoothRemoteGATTCharacteristic | null = null;
-    private batteryInterval: ReturnType<typeof setInterval> | null = null;
     private onBatteryChanged: ((evt: Event) => void) | null = null;
     private batteryPollFailures = 0;
 
     constructor(device: BluetoothDevice, name: string) {
-        this.device = device;
-        this.deviceName = name;
-        this.deviceMAC = '';
+        super(device, GIIKER_PROTOCOL, name, '', GIIKER_CAPABILITIES);
     }
 
-    get capabilities(): SmartCubeCapabilities {
-        return this.bus.capabilities as SmartCubeCapabilities;
-    }
-
-    getSnapshot(): SmartCubeSnapshot {
-        return this.bus.getSnapshot();
-    }
-
+    // SUPERSEDED: the bus facade, device and lifecycle live in GattSmartCubeConnection.
+    // readonly deviceName: string;
+    // readonly deviceMAC: string;
+    // readonly protocol: SmartCubeProtocolInfo = GIIKER_PROTOCOL;
+    // private readonly bus = new SmartCubeEventBus({ ...GIIKER_CAPABILITIES });
+    // readonly events$: Observable<SmartCubeEvent> = this.bus.events$;
+    // readonly state$: Observable<SmartCubeSnapshot> = this.bus.state$;
+    // private device: BluetoothDevice;
+    // private batteryInterval: ReturnType<typeof setInterval> | null = null;
+    // constructor(device: BluetoothDevice, name: string) {
+    //     this.device = device;
+    //     this.deviceName = name;
+    //     this.deviceMAC = '';
+    // }
+    // get capabilities(): SmartCubeCapabilities {
+    //     return this.bus.capabilities as SmartCubeCapabilities;
+    // }
+    // getSnapshot(): SmartCubeSnapshot {
+    //     return this.bus.getSnapshot();
+    // }
 
     private onStateChanged = (event: Event): void => {
         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
@@ -205,20 +216,18 @@ class GiikerConnection implements SmartCubeConnection {
         });
     }
 
-    private emitHardwareEvent(): void {
-        this.bus.emit({
-            timestamp: now(),
-            type: "HARDWARE",
-            hardwareName: this.deviceName,
-            gyroSupported: false
-        });
-    }
-
-    /** Idempotent teardown shared by remote and explicit disconnects. */
-    private teardown(): void {
+    // SUPERSEDED: GattSmartCubeConnection.emitHardwareEventFromName(). Giiker never enables the gyroscope capability, so `this.capabilities.gyroscope` is the same `false`.
+    // private emitHardwareEvent(): void {
+    //     this.bus.emit({
+    //         timestamp: now(),
+    //         type: "HARDWARE",
+    //         hardwareName: this.deviceName,
+    //         gyroSupported: false
+    //     });
+    // }
+    protected override releaseResources(): void {
         this.closed = true;
         this.live = false;
-        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
         if (this.dataChrct) {
             this.dataChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
             this.dataChrct = null;
@@ -226,27 +235,43 @@ class GiikerConnection implements SmartCubeConnection {
         if (this.rwReadChrct && this.onBatteryChanged) {
             this.rwReadChrct.removeEventListener('characteristicvaluechanged', this.onBatteryChanged);
         }
+        this.rwReadChrct = null;
         this.onBatteryChanged = null;
         this.rwWriteChrct = null;
-        this.bus.resetBatteryDedupe();
-        if (this.batteryInterval) {
-            clearInterval(this.batteryInterval);
-            this.batteryInterval = null;
-        }
-        this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
-        this.bus.complete();
     }
 
-    private onDisconnect = (): void => {
-        this.teardown();
-    };
-
+    // SUPERSEDED: GattSmartCubeConnection.teardown() runs releaseResources() at the same point in the same order.
+    // /** Idempotent teardown shared by remote and explicit disconnects. */
+    // private teardown(): void {
+    //     this.closed = true;
+    //     this.live = false;
+    //     this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+    //     if (this.dataChrct) {
+    //         this.dataChrct.removeEventListener('characteristicvaluechanged', this.onStateChanged);
+    //         this.dataChrct = null;
+    //     }
+    //     if (this.rwReadChrct && this.onBatteryChanged) {
+    //         this.rwReadChrct.removeEventListener('characteristicvaluechanged', this.onBatteryChanged);
+    //     }
+    //     this.onBatteryChanged = null;
+    //     this.rwWriteChrct = null;
+    //     this.bus.resetBatteryDedupe();
+    //     if (this.batteryInterval) {
+    //         clearInterval(this.batteryInterval);
+    //         this.batteryInterval = null;
+    //     }
+    //     this.bus.emit({ timestamp: now(), type: "DISCONNECT" });
+    //     this.bus.complete();
+    // }
+    //
+    // private onDisconnect = (): void => {
+    //     this.teardown();
+    // };
     async init(): Promise<void> {
-        this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
-        try {
+        await this.initialize(async () => {
             this.gatt = await this.device.gatt!.connect();
-            const dataService = await this.gatt.getPrimaryService(SERVICE_UUID_DATA);
-            this.dataChrct = await dataService.getCharacteristic(CHRCT_UUID_DATA);
+            const dataService = await this.gatt.getPrimaryService(GIIKER_DATA_SERVICE);
+            this.dataChrct = await dataService.getCharacteristic(GIIKER_DATA_CHARACTERISTIC);
 
             // Attach listener before notifications to reduce missed packets.
             this.dataChrct.addEventListener('characteristicvaluechanged', this.onStateChanged);
@@ -276,22 +301,26 @@ class GiikerConnection implements SmartCubeConnection {
                 throw new Error('[Giiker] disconnected during initialization');
             }
             this.live = true;
-        } catch (e) {
-            this.teardown();
-            if (this.device.gatt?.connected) {
-                this.device.gatt.disconnect();
-            }
-            throw e;
-        }
+        });
+        // SUPERSEDED: GattSmartCubeConnection.initialize() owns the disconnect hook and the failure path.
+        // this.device.addEventListener('gattserverdisconnected', this.onDisconnect);
+        // try {
+        // } catch (e) {
+        //     this.teardown();
+        //     if (this.device.gatt?.connected) {
+        //         this.device.gatt.disconnect();
+        //     }
+        //     throw e;
+        // }
     }
 
     /** Optional control service: capabilities are enabled only after setup succeeds. */
     private async setupBatteryService(): Promise<void> {
         try {
-            const rwService = await this.gatt!.getPrimaryService(SERVICE_UUID_RW);
+            const rwService = await this.gatt!.getPrimaryService(GIIKER_CONTROL_SERVICE);
             const chrcts = await rwService.getCharacteristics();
-            const readChrct = findCharacteristic(chrcts, CHRCT_UUID_READ);
-            const writeChrct = findCharacteristic(chrcts, CHRCT_UUID_WRITE);
+            const readChrct = findCharacteristic(chrcts, GIIKER_CONTROL_READ_CHARACTERISTIC);
+            const writeChrct = findCharacteristic(chrcts, GIIKER_CONTROL_WRITE_CHARACTERISTIC);
             if (!readChrct || !writeChrct) {
                 return;
             }
@@ -315,7 +344,7 @@ class GiikerConnection implements SmartCubeConnection {
             this.bus.setCapabilities({ battery: true, reset: true });
             this.batteryPollFailures = 0;
             this.requestBatteryPoll();
-            this.batteryInterval = setInterval(() => this.requestBatteryPoll(), 60_000);
+            this.startBatteryPolling(() => this.requestBatteryPoll());
         } catch {
             // Control service absent or unusable: battery/reset stay unavailable.
         }
@@ -331,17 +360,14 @@ class GiikerConnection implements SmartCubeConnection {
                 // A permanently broken control channel should not poll forever while
                 // advertising a battery capability it cannot serve.
                 if (++this.batteryPollFailures >= 5) {
-                    if (this.batteryInterval) {
-                        clearInterval(this.batteryInterval);
-                        this.batteryInterval = null;
-                    }
+                    this.stopBatteryPolling();
                     this.bus.setCapabilities({ battery: false });
                 }
             },
         );
     }
 
-    async sendCommand(command: SmartCubeCommand): Promise<void> {
+    override async sendCommand(command: SmartCubeCommand): Promise<void> {
         if (command.type === "REQUEST_BATTERY") {
             // Periodic battery polling is set up in init when available.
             if (this.rwWriteChrct) {
@@ -362,7 +388,7 @@ class GiikerConnection implements SmartCubeConnection {
                 });
             }
         } else if (command.type === "REQUEST_HARDWARE") {
-            this.emitHardwareEvent();
+            this.emitHardwareEventFromName();
         } else if (command.type === "REQUEST_RESET") {
             if (this.rwWriteChrct) {
                 await writeGattCharacteristicValue(this.rwWriteChrct, new Uint8Array([GIIKER_OP_RESET]).buffer);
@@ -370,21 +396,26 @@ class GiikerConnection implements SmartCubeConnection {
         }
     }
 
-    async disconnect(): Promise<void> {
-        const dataChrct = this.dataChrct;
-        const rwReadChrct = this.rwReadChrct;
-        this.rwReadChrct = null;
-        this.teardown();
-        if (dataChrct) {
-            await dataChrct.stopNotifications().catch(() => {});
-        }
-        if (rwReadChrct) {
-            await rwReadChrct.stopNotifications().catch(() => {});
-        }
-        if (this.device.gatt?.connected) {
-            this.device.gatt.disconnect();
-        }
+    protected override notifyingCharacteristics(): (BluetoothRemoteGATTCharacteristic | null)[] {
+        return [this.dataChrct, this.rwReadChrct];
     }
+
+    // SUPERSEDED: GattSmartCubeConnection.disconnect() stops notifyingCharacteristics() and drops the GATT link.
+    // async disconnect(): Promise<void> {
+    //     const dataChrct = this.dataChrct;
+    //     const rwReadChrct = this.rwReadChrct;
+    //     this.rwReadChrct = null;
+    //     this.teardown();
+    //     if (dataChrct) {
+    //         await dataChrct.stopNotifications().catch(() => {});
+    //     }
+    //     if (rwReadChrct) {
+    //         await rwReadChrct.stopNotifications().catch(() => {});
+    //     }
+    //     if (this.device.gatt?.connected) {
+    //         this.device.gatt.disconnect();
+    //     }
+    // }
 }
 
 const GIIKER_NAME_FILTERS: SmartCubeNameFilter[] = [
@@ -395,12 +426,12 @@ const GIIKER_NAME_FILTERS: SmartCubeNameFilter[] = [
 
 const giikerProtocol: SmartCubeProtocol = {
     nameFilters: GIIKER_NAME_FILTERS,
-    optionalServices: [SERVICE_UUID_DATA, SERVICE_UUID_RW],
+    optionalServices: [GIIKER_DATA_SERVICE, GIIKER_CONTROL_SERVICE],
 
     matchesDevice: deviceNameMatchesFilters(GIIKER_NAME_FILTERS),
 
     gattAffinity(serviceUuids: ReadonlySet<string>, _device: BluetoothDevice): number {
-        return serviceUuids.has(normalizeUuid(SERVICE_UUID_DATA)) ? 115 : 0;
+        return serviceUuids.has(normalizeUuid(GIIKER_DATA_SERVICE)) ? 115 : 0;
     },
 
     async connect(
